@@ -1,7 +1,6 @@
 # QSDK
-qsdk
-河北骑士智能科技有限公司基于RT-THREAD RTOS编写的NB-IOT模块驱动代码，目前支持的模块型号有M5310、M5310A、ME3616。
-源码地址：[https://github.com/hbqs/qsdk]。作者:[longmain](https://github.com/hbqs)
+QSDK是河北骑士智能科技有限公司基于RT-THREAD RTOS编写的NB-IOT模块驱动代码，目前支持的模块型号有M5310、M5310A、ME3616。
+源码地址：[https://github.com/hbqs/qsdk] 作者:[longmain](https://github.com/hbqs)
 
 
 ## 前言
@@ -15,7 +14,7 @@ qsdk开放源码，nb控制块、协议处理块均采用数据结构方式，�
 同时代码支持快速初始化NB模块联网，快速连接onenet平台等功能，大大简化了客户的使用方式。
 
 ## qsdk代码在env使用
-目前我们将NB-IOT模块驱动代码做成软件包（packages），如果使用RT-Thread操作系统的话，可以在env中直接配置使用，使用前请开启AT组建支持!
+目前我们将NB-IOT模块驱动代码做成软件包（packages），如果使用RT-Thread操作系统的话，可以在env中直接配置使用，使用前请开启AT组件支持!
 
 步骤如下：
 
@@ -51,6 +50,7 @@ qsdk开放源码，nb控制块、协议处理块均采用数据结构方式，�
 
 ## 联系人
 
+* 技术支持：longmain	QQ：1239799850
 * 邮箱：[longmain@longmain.cn](mailto:longmain@longmain.cn)
 * 主页：[qsdk](https://github.com/hbqs)
 * 仓库：[Github](https://github.com/hbqs)
