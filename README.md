@@ -21,31 +21,31 @@ qsdk开放源码，nb控制块、协议处理块均采用数据结构方式，�
 
 1. **选择在线软件包**
 
-![](https://github.com/hbqs/qsdk/help/png/1.png?raw=true)
+![](https://github.com/hbqs/qsdk/blob/master/help/png/1.png?raw=true)
 
 2. **选择软件包属性为物联网相关**
 
-![](https://github.com/hbqs/qsdk/help/png/2.png?raw=true)
+![](https://github.com/hbqs/qsdk/blob/master/help/png/2.png?raw=true)
 
 3. **选择qsdk组件**
 
-![](https://github.com/hbqs/qsdk/help/png/3.png?raw=true)
+![](https://github.com/hbqs/qsdk/blob/master/help/png/3.png?raw=true)
 
 4. **进入qsdk的选项配置（自带默认属性）**
 
-![](https://github.com/hbqs/qsdk/help/png/4.png?raw=true)
+![](https://github.com/hbqs/qsdk/blob/master/help/png/4.png?raw=true)
 
 5. **为QSDK选择一款模组**
 
-![](https://github.com/hbqs/qsdk/help/png/5.png?raw=true)
+![](https://github.com/hbqs/qsdk/blob/master/help/png/5.png?raw=true)
 
 6. **更新软件包**
 
-![](https://github.com/hbqs/qsdk/help/png/6.png?raw=true)
+![](https://github.com/hbqs/qsdk/blob/master/help/png/6.png?raw=true)
 
 7. **编译生成mdk/iar工程**
 
-![](https://github.com/hbqs/qsdk/help/png/7.png?raw=true)
+![](https://github.com/hbqs/qsdk/blob/master/help/png/7.png?raw=true)
 
 
 
