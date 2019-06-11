@@ -21,25 +21,7 @@
 #endif
 #include <ulog.h>
 
-#ifdef QSDK_USING_NET
-extern qsdk_net_client_t udp_client;
-#endif
 
-#ifdef QSDK_USING_ONENET
-//引用 object
-extern qsdk_onenet_stream_t temp_object;
-extern qsdk_onenet_stream_t hump_object;
-extern qsdk_onenet_stream_t light0_object;
-extern qsdk_onenet_stream_t light1_object;
-extern qsdk_onenet_stream_t light2_object;
-extern qsdk_onenet_stream_t gps_lat_object;
-extern qsdk_onenet_stream_t gps_lon_object;
-#endif
-
-
-
-//引用常量
-extern int beep_status;
 /****************************************************
 * 函数名称： qsdk_rtc_set_time_callback
 *
@@ -69,13 +51,9 @@ void qsdk_rtc_set_time_callback(int year,char month,char day,char hour,char min,
 *****************************************************/
 int qsdk_net_data_callback(char *data,int len)
 {
-#ifdef QSDK_USING_NET
+
 	LOG_D("enter net callback\r\n");
-	if(qsdk_net_get_client_revice(udp_client)==RT_EOK)
-	{
-		LOG_D("udp client rev data=%d,%s\r\n",len,data);
-	}
-#endif
+	LOG_D("udp client rev data=%d,%s\r\n",len,data);
 	return RT_EOK;
 }
 
@@ -122,11 +100,9 @@ int qsdk_onenet_close_callback()
 *****************************************************/
 int qsdk_onenet_read_rsp_callback(int msgid,int insid,int resid)
 {
-	float temp=1000.12345;
-	rt_kprintf("enter read dsp callback\r\n");
-	if(qsdk_onenet_get_object_read(temp_object)==RT_EOK)
-		qsdk_onenet_read_rsp(msgid,qsdk_onenet_status_result_read_success,temp_object,1,(qsdk_onenet_value_t)&temp,0,0);
-		return RT_EOK;
+	LOG_D("enter read dsp callback\r\n");
+
+	return RT_EOK;
 }
 /****************************************************
 * 函数名称： qsdk_onenet_write_rsp_callback
@@ -141,7 +117,7 @@ int qsdk_onenet_read_rsp_callback(int msgid,int insid,int resid)
 *****************************************************/
 int qsdk_onenet_write_rsp_callback(int len,char* value)
 {
-	
+	LOG_D("enter write dsp callback\r\n");	
 	return RT_EOK;
 }
 /****************************************************
@@ -159,10 +135,8 @@ int qsdk_onenet_exec_rsp_callback(int len,char* cmd)
 {
 
 	LOG_D("enter exec dsp callback\r\n");
-
 	LOG_D("exec data len:%d   data=%s\r\n",len,cmd);
 	return RT_EOK;
-
 }
 
 
@@ -197,6 +171,7 @@ void qsdk_onenet_fota_callback(void)
 
 int qsdk_mqtt_data_callback(char *topic,char *mesg,int mesg_len)
 {
+	LOG_D("enter mqtt data callback\r\n");
 	rt_kprintf("enter mqtt callback  mesg:%s,len:%d\r\n",mesg,mesg_len);
 
 	return RT_EOK;
@@ -214,11 +189,8 @@ int qsdk_mqtt_data_callback(char *topic,char *mesg,int mesg_len)
 *****************************************************/
 void qsdk_nb_reboot_callback(void)
 {
-	LOG_D("enter reboot callback\r\n");
+	LOG_E("enter reboot callback\r\n");
 	
-
-
-
 }
 
 
