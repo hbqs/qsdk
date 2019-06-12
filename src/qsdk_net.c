@@ -6,6 +6,7 @@
  * Change Logs:
  * Date           Author       Notes
  * 2018-11-14     longmain     first version
+ * 2018-06-12     longmain     Fix UDP connect errors
  */
 
 #include "qsdk.h"
@@ -162,7 +163,7 @@ int qsdk_net_connect_to_server(qsdk_net_client_t client)
 		
 
 	}
-	else if(client->type==QSDK_NET_TYPE_UDP)	client->connect_status=10;
+	else if(client->type==QSDK_NET_TYPE_UDP)	client->connect_status=NET_CONNECT_SUCCESS;
 	return RT_EOK;
 }
 /*************************************************************

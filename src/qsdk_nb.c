@@ -9,6 +9,7 @@
  * 2019-04-19     longmain     v1.0.0
  * 2019-05-09     longmain     add m5311 module
  * 2019-05-19     longmain     add psm mode
+ * 2018-06-12     longmain     Separated qsdk nb quick connect to net
  */
 
 #include "qsdk.h"
@@ -1041,10 +1042,7 @@ int qsdk_init_environment(void)
 *************************************************************/
 int qsdk_nb_quick_connect(void)
 {
-
 	int i=5;
-		if(qsdk_init_environment()!=RT_EOK) return RT_ERROR;		
-
 #ifdef QSDK_USING_M5310A
 //如果启用M5310连接IOT平台
 		if(qsdk_iot_check_address()!=RT_EOK)
