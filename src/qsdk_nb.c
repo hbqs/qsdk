@@ -11,6 +11,7 @@
  * 2019-05-19     longmain     add psm mode
  * 2018-06-12     longmain     Separated qsdk nb quick connect to net
  * 2018-06-13     longmain     add hexstring to string
+ * 2018-06-13     longmain     qsdk environment is auto init by the system app
  */
 
 #include "qsdk.h"
@@ -157,7 +158,7 @@ int qsdk_nb_reboot(void)
 	nb_device_table.reboot_open=NB_MODULE_REBOOT_FOR_PIN;
 	nb_device_table.reboot_type=NB_MODULE_NO_INIT;
 	nb_device_table.net_connect_ok=NB_MODULE_NO_INIT;
-	
+	LOG_D("now nb-iot rebooting by pin");
 	rt_pin_write(QSDK_RESET_PIN,PIN_HIGH);
 	rt_thread_delay(500);
 	rt_pin_write(QSDK_RESET_PIN,PIN_LOW);
@@ -768,25 +769,29 @@ void nb_reboot_func(char *data)
 #if	(defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)
 	if(rt_strstr(data,"REBOOT_CAUSE_SECURITY_RESET_PIN")!=RT_NULL)
 	{
-		LOG_E("%s\r\n reboot by pin\r\n",data);
-		
 		if(nb_device_table.reboot_open==NB_MODULE_REBOOT_FOR_PIN)
 		{
 			nb_device_table.reboot_type=NB_MODULE_REBOOT_BY_PIN;
 			rt_event_send(nb_event,EVENT_REBOOT);
 		}			
-		else qsdk_nb_reboot_callback();
+		else 
+		{
+			LOG_E("%s\r\n reboot by pin\r\n",data);
+			qsdk_nb_reboot_callback();
+		}
 	}
 	else 	if(rt_strstr(data,"REBOOT_CAUSE_APPLICATION_AT")!=RT_NULL)
-	{
-		LOG_E("%s\r\n reboot by at\r\n",data);
-		
+	{	
 		if(nb_device_table.reboot_open==NB_MODULE_REBOOT_FOR_AT)
 		{
 			nb_device_table.reboot_type=NB_MODULE_REBOOT_BY_AT;	
 			rt_event_send(nb_event,EVENT_REBOOT);
 		}
-		else qsdk_nb_reboot_callback();
+		else 
+		{
+			LOG_E("%s\r\n reboot by at\r\n",data);
+			qsdk_nb_reboot_callback();
+		}
 	}
 	else 	if(rt_strstr(data,"REBOOT_CAUSE_SECURITY_FOTA_UPGRADE")!=RT_NULL)
 	{
@@ -983,83 +988,82 @@ static struct at_urc nb_urc_table[]={
 *************************************************************/
 int qsdk_init_environment(void)
 {
-		rt_uint32_t status;
-		rt_device_t uart_device;
-		struct serial_configure config = RT_SERIAL_CONFIG_DEFAULT; 
-		
-		LOG_I("\r\nWelcome to use QSDK. This SDK by longmain.\r\n Our official website is www.longmain.cn.\r\n\r\n");
-		//set uart buad
-    uart_device=rt_device_find(QSDK_UART);
+	rt_uint32_t i=5,status;
+	rt_device_t uart_device;
+	struct serial_configure config = RT_SERIAL_CONFIG_DEFAULT; 
+	
+	LOG_I("\r\nWelcome to use QSDK. This SDK by longmain.\r\n Our official website is www.longmain.cn.\r\n\r\n");
+	//set uart buad
+	uart_device=rt_device_find(QSDK_UART);
 
-		config.baud_rate=QSDK_UART_BAUDRATE;
-		rt_device_control(uart_device, RT_DEVICE_CTRL_CONFIG, &config);
-		//at client init
-		at_client_init(QSDK_UART,QSDK_CMD_REV_MAX_LEN*2+100);
-		//create at resp
-		nb_client = at_client_get(QSDK_UART);
-		nb_resp=at_create_resp(QSDK_CMD_REV_MAX_LEN*2+100,0,5000);
-		if (nb_resp == RT_NULL)
-		{
-			LOG_E("create at resp failure \r\n");
-			return RT_ERROR;
-		}	
-		at_obj_set_urc_table(nb_client,nb_urc_table,sizeof(nb_urc_table)/sizeof(nb_urc_table[0]));
-		//create mail
-		nb_mail=rt_mb_create("nb_mail",
-														10,
-														RT_IPC_FLAG_FIFO);
-		if(nb_mail==RT_NULL)
-		{
-			LOG_E("create mail failure\n");
-			return RT_ERROR;
-		}
-		//create event
-		nb_event=rt_event_create("nb_event",RT_IPC_FLAG_FIFO);
-		if(nb_event==RT_NULL)
-		{
-			LOG_E("create event failure\r\n");
-			return RT_ERROR;
-		}
-		//create event hand fun
-		hand_thread_id=rt_thread_create("hand_thread",
-																		hand_thread_entry,
-																		RT_NULL,
-																		QSDK_HAND_THREAD_STACK_SIZE,
-																		7,
-																		50);
-		if(hand_thread_id!=RT_NULL)
-			rt_thread_startup(hand_thread_id);
-		else
-		{
-			LOG_E("create event hand fun failure\r\n");
-			return RT_ERROR;
-		}
-		rt_memset(&nb_device_table,0,sizeof(nb_device_table));
-		nb_device_table.reboot_open=NB_MODULE_REBOOT_FOR_PIN;
-		nb_device_table.reboot_type=NB_MODULE_NO_INIT;
-		nb_device_table.net_connect_ok=NB_MODULE_NO_INIT;
-		//nb-iot gpio init
-		if(nb_io_init()!=RT_EOK)
-		{
-			LOG_E("nb-iot gpio init failure\r\n");
-			return RT_ERROR;
-		}		
-		if(rt_event_recv(nb_event,EVENT_REBOOT,RT_EVENT_FLAG_AND|RT_EVENT_FLAG_CLEAR,7500,&status)!=RT_EOK)
-		{
-			LOG_E("nb-iot power on reset failure\r\n");
-			return RT_ERROR;
-		}
-		nb_device_table.reboot_type=NB_MODULE_NO_INIT;
-		nb_device_table.reboot_open=0;
-		rt_thread_delay(1000);
-		
-		if(qsdk_nb_wait_connect()!=RT_EOK)
-		{
-			LOG_E("nb-iot wait connect failure\r\n");
-			return RT_ERROR;
-		}
-
-		return RT_EOK;
+	config.baud_rate=QSDK_UART_BAUDRATE;
+	rt_device_control(uart_device, RT_DEVICE_CTRL_CONFIG, &config);
+	//at client init
+	at_client_init(QSDK_UART,QSDK_CMD_REV_MAX_LEN*2+100);
+	//create at resp
+	nb_client = at_client_get(QSDK_UART);
+	nb_resp=at_create_resp(QSDK_CMD_REV_MAX_LEN*2+100,0,5000);
+	if (nb_resp == RT_NULL)
+	{
+		LOG_E("create at resp failure \r\n");
+		return RT_ERROR;
+	}	
+	at_obj_set_urc_table(nb_client,nb_urc_table,sizeof(nb_urc_table)/sizeof(nb_urc_table[0]));
+	//create mail
+	nb_mail=rt_mb_create("nb_mail",
+													10,
+													RT_IPC_FLAG_FIFO);
+	if(nb_mail==RT_NULL)
+	{
+		LOG_E("create mail failure\n");
+		return RT_ERROR;
+	}
+	//create event
+	nb_event=rt_event_create("nb_event",RT_IPC_FLAG_FIFO);
+	if(nb_event==RT_NULL)
+	{
+		LOG_E("create event failure\r\n");
+		return RT_ERROR;
+	}
+	//create event hand fun
+	hand_thread_id=rt_thread_create("hand_thread",
+																	hand_thread_entry,
+																	RT_NULL,
+																	QSDK_HAND_THREAD_STACK_SIZE,
+																	7,
+																	50);
+	if(hand_thread_id!=RT_NULL)
+		rt_thread_startup(hand_thread_id);
+	else
+	{
+		LOG_E("create event hand fun failure\r\n");
+		return RT_ERROR;
+	}
+	rt_memset(&nb_device_table,0,sizeof(nb_device_table));
+	nb_device_table.reboot_open=NB_MODULE_REBOOT_FOR_PIN;
+	nb_device_table.reboot_type=NB_MODULE_NO_INIT;
+	nb_device_table.net_connect_ok=NB_MODULE_NO_INIT;
+	//nb-iot gpio init
+	if(nb_io_init()!=RT_EOK)
+	{
+		LOG_E("nb-iot gpio init failure\r\n");
+		return RT_ERROR;
+	}		
+	if(rt_event_recv(nb_event,EVENT_REBOOT,RT_EVENT_FLAG_AND|RT_EVENT_FLAG_CLEAR,7500,&status)!=RT_EOK)
+	{
+		LOG_E("nb-iot power on reset failure\r\n");
+		return RT_ERROR;
+	}
+	nb_device_table.reboot_type=NB_MODULE_NO_INIT;
+	nb_device_table.reboot_open=0;
+	rt_thread_delay(1000);
+	
+	if(qsdk_nb_wait_connect()!=RT_EOK)
+	{
+		LOG_E("nb-iot wait connect failure\r\n");
+		return RT_ERROR;
+	}
+	return RT_EOK;
 }
 /*************************************************************
 *	函数名称：	qsdk_nb_quick_connect
@@ -1074,20 +1078,20 @@ int qsdk_init_environment(void)
 *************************************************************/
 int qsdk_nb_quick_connect(void)
 {
-	int i=5;
+	rt_uint32_t i=5;
 #ifdef QSDK_USING_M5310A
 //如果启用M5310连接IOT平台
-		if(qsdk_iot_check_address()!=RT_EOK)
+	if(qsdk_iot_check_address()!=RT_EOK)
+	{
+		LOG_D("ncdp error,now to set ncdp address\r\n");
+		
+		if(qsdk_iot_set_address()==RT_EOK)
 		{
-			LOG_D("ncdp error,now to set ncdp address\r\n");
-			
-			if(qsdk_iot_set_address()==RT_EOK)
-			{
-				if(qsdk_iot_check_address()!=RT_EOK)
-					LOG_E("set ncdp address failure\r\n");
-			}
-			else	return RT_ERROR;
+			if(qsdk_iot_check_address()!=RT_EOK)
+				LOG_E("set ncdp address failure\r\n");
 		}
+		else	return RT_ERROR;
+	}
 #endif	
 	rt_thread_delay(1000);
 //首先确定模块是否开机	
@@ -1233,5 +1237,8 @@ int qsdk_nb_quick_connect(void)
 				
 		return RT_EOK;	
 }
+
+INIT_APP_EXPORT(qsdk_init_environment);
+
 
 
