@@ -7,6 +7,7 @@
  * Date           Author       Notes
  * 2018-11-14     longmain     first version
  * 2018-06-12     longmain     Fix UDP connect errors
+ * 2018-06-13     longmain     add hexstring to string
  */
 
 #include "qsdk.h"
@@ -177,7 +178,7 @@ int qsdk_net_connect_to_server(qsdk_net_client_t client)
 *
 *	ËµÃ÷£º		
 *************************************************************/
-int qsdk_net_send_data(qsdk_net_client_t client,char *str,unsigned int len)
+int qsdk_net_send_data(qsdk_net_client_t client,char *str)
 {
 	if(str==NULL||strlen(str)>1024)
 	{
@@ -272,14 +273,24 @@ int net_rev_data(int port,int len)
 	rev_len=strtok(NULL,",");
 	rev_data=strtok(NULL,",");
 
-	if(qsdk_net_data_callback(rev_data,atoi(rev_len))==RT_EOK)
+	char *str=rt_calloc(1,len);
+	if(str==RT_NULL)
+	{
+		LOG_E("net callack create buf error\r\n");
+		rt_free(buf);
+		return RT_ERROR;
+	}
+	hexstring_to_string(rev_data,len,str);
+	if(qsdk_net_data_callback(str,len)==RT_EOK)
 	{
 		rt_free(buf);
+		rt_free(str);
 		return RT_EOK;
 	}
 	else 
 	{
 		rt_free(buf);
+		rt_free(str);
 		return RT_ERROR;
 	}
 }

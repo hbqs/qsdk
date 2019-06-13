@@ -10,6 +10,7 @@
  * 2019-05-09     longmain     add m5311 module
  * 2019-05-19     longmain     add psm mode
  * 2018-06-12     longmain     Separated qsdk nb quick connect to net
+ * 2018-06-13     longmain     add hexstring to string
  */
 
 #include "qsdk.h"
@@ -719,7 +720,38 @@ int string_to_hex(const char *pString, int len, char *pHex)
     }
     return RT_EOK;
 }
-
+/************************************************************
+*	函数名称：	hexstring_to_string
+*
+*	函数功能：	16进制字符串转字符串
+*
+*	入口参数：	pHex: 16进制字符串   len: pHex字符串长度     pString：转换好的字符串
+*
+*	返回参数：	无
+*
+*	说明：		
+************************************************************/
+void hexstring_to_string(char * pHex,int len, char * pString)
+{
+	int i=0,j=0;
+	unsigned char temp[2];
+	for ( i = 0; i <len+1; i++)
+	{
+			temp[0] = *pHex++;
+			temp[1] = *pHex++;
+			for (j = 0; j < 2; j++)
+			{
+					if (temp[j] <= 'F' && temp[j] >= 'A')
+							temp[j] = temp[j] - 'A' + 10;
+					else if (temp[j] <= 'f' && temp[j] >= 'a')
+							temp[j] = temp[j] - 'a' + 10;
+					else if (temp[j] >= '0' && temp[j] <= '9')
+							temp[j] = temp[j] - '0';
+			}   
+			pString[i] = temp[0] << 4;   
+			pString[i] |= temp[1]; 
+	}   
+}
 /*************************************************************
 *	函数名称：	nb_reboot_func
 *
