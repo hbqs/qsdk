@@ -6,6 +6,7 @@
  * Change Logs:
  * Date           Author       Notes
  * 2018-11-14     longmain     first version
+ * 2018-06-13     longmain     add hexstring to string
  */
 
 #ifndef __QSDK_H__
@@ -84,7 +85,7 @@ char *qsdk_nb_query_ip(void);
 int qsdk_iot_check_address(void);
 int qsdk_iot_set_address(void);
 int string_to_hex(const char *pString, int len, char *pHex);
-
+void hexstring_to_string(char * pHex,int len, char * pString);
 
 //qsdk_iot_fun
 
@@ -125,7 +126,7 @@ typedef struct net_stream *qsdk_net_client_t;
 qsdk_net_client_t qsdk_net_client_init(int type,int port,char *server_ip,unsigned short server_port);
 int qsdk_net_create_socket(qsdk_net_client_t client);
 int qsdk_net_connect_to_server(qsdk_net_client_t client);
-int qsdk_net_send_data(qsdk_net_client_t client,char *str,unsigned int len);
+int qsdk_net_send_data(qsdk_net_client_t client,char *str);
 int qsdk_net_get_client_revice(qsdk_net_client_t client);
 int qsdk_net_get_client_connect(qsdk_net_client_t client);
 int qsdk_net_close_socket(qsdk_net_client_t client);
