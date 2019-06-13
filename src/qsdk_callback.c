@@ -7,6 +7,7 @@
  * Date           Author       Notes
  * 2018-11-14     longmain     first version
  * 2018-12-13     longmain     update fun
+ * 2018-06-13     longmain     add net close callback
  */
 
 #include "qsdk.h"
@@ -37,6 +38,23 @@ void qsdk_rtc_set_time_callback(int year,char month,char day,char hour,char min,
 { 
 	set_date(year,month,day);
 	set_time(hour,min,sec);
+}
+
+/*************************************************************
+*	函数名称：	qsdk_net_close_callback
+*
+*	函数功能：	TCP异常断开回调函数
+*
+*	入口参数：	无
+*
+*	返回参数：	无
+*
+*	说明：		
+*************************************************************/
+void qsdk_net_close_callback(void)
+{
+	LOG_E("now the network is abnormally disconnected\r\n");
+	
 }
 /****************************************************
 * 函数名称： qsdk_net_data_callback

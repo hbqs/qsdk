@@ -7,6 +7,7 @@
  * Date           Author       Notes
  * 2018-11-14     longmain     first version
  * 2018-06-13     longmain     add hexstring to string
+ * 2018-06-13     longmain     add net close callback
  */
 
 #ifndef __QSDK_H__
@@ -257,6 +258,7 @@ int qsdk_mqtt_get_error_type(void);
 void qsdk_rtc_set_time_callback(int year,char month,char day,char hour,char min,char sec,char week);
 
 int qsdk_net_data_callback(char *data,int len);
+void qsdk_net_close_callback(void);
 int qsdk_iot_data_callback(char *data,int len);
 
 int qsdk_onenet_close_callback(void);

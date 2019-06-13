@@ -8,6 +8,7 @@
  * 2018-11-14     longmain     first version
  * 2018-06-12     longmain     Fix UDP connect errors
  * 2018-06-13     longmain     add hexstring to string
+ * 2018-06-13     longmain     add net close callback
  */
 
 #include "qsdk.h"
@@ -409,6 +410,7 @@ void net_event_func(char *event)
 			else if(net_client_table[i].connect_status==NET_CONNECT_SUCCESS)
 			{
 				net_client_table[i].connect_status=NET_CONNECT_FAIL;
+				qsdk_net_close_callback();
 			}
 		}
 		else if(rt_strstr(event,"CONNECT OK")!=RT_NULL)
