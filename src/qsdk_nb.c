@@ -988,7 +988,7 @@ static struct at_urc nb_urc_table[]={
 *************************************************************/
 int qsdk_init_environment(void)
 {
-	rt_uint32_t i=5,status;
+	rt_uint32_t status;
 	rt_device_t uart_device;
 	struct serial_configure config = RT_SERIAL_CONFIG_DEFAULT; 
 	
