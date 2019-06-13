@@ -58,9 +58,6 @@ struct nb_device
 };
 
 
-//qsdk 运行环境初始化
-int qsdk_init_environment(void);
-
 //qsdk_nb_fun
 int qsdk_nb_quick_connect(void);
 int qsdk_nb_wait_connect(void);
