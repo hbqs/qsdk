@@ -7,6 +7,7 @@
  * Date           Author       Notes
  * 2018-11-14     longmain     first version
  * 2019-05-09     longmain     add m5311 module
+ * 2019-06-18     longmain     auto init onenet environment
  */
 #include "qsdk.h"
 #include <at.h>
@@ -100,7 +101,7 @@ extern rt_event_t nb_event;
 *
 *	说明：		
 ***********************************************************/
-void qsdk_onenet_init_environment(void)
+int qsdk_onenet_init_environment(void)
 {
 	rt_memset(&onenet_device_table,0,sizeof(onenet_device_table));		 	//清空数据流结构体
 	onenet_device_table.dev_len=0;
@@ -110,6 +111,7 @@ void qsdk_onenet_init_environment(void)
 	onenet_device_table.write_callback=qsdk_onenet_write_rsp_callback; 	//write回调函数映射
 	onenet_device_table.read_callback=qsdk_onenet_read_rsp_callback;	 	//read 回掉函数映射
 	onenet_device_table.execute_callback=qsdk_onenet_exec_rsp_callback;	//exec 回调函数映射
+	return RT_EOK;
 }
 
 /*************************************************************
@@ -1626,4 +1628,5 @@ void onenet_event_func(char *event)
 	}	
 }
 
+INIT_APP_EXPORT(qsdk_onenet_init_environment);
 #endif

@@ -9,9 +9,9 @@
  * 2019-04-19     longmain     v1.0.0
  * 2019-05-09     longmain     add m5311 module
  * 2019-05-19     longmain     add psm mode
- * 2018-06-12     longmain     Separated qsdk nb quick connect to net
- * 2018-06-13     longmain     add hexstring to string
- * 2018-06-13     longmain     qsdk environment is auto init by the system app
+ * 2019-06-12     longmain     Separated qsdk nb quick connect to net
+ * 2019-06-13     longmain     add hexstring to string
+ * 2019-06-13     longmain     qsdk environment is auto init by the system app
  */
 
 #include "qsdk.h"

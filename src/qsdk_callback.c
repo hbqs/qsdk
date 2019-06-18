@@ -7,7 +7,7 @@
  * Date           Author       Notes
  * 2018-11-14     longmain     first version
  * 2018-12-13     longmain     update fun
- * 2018-06-13     longmain     add net close callback
+ * 2019-06-13     longmain     add net close callback
  */
 
 #include "qsdk.h"

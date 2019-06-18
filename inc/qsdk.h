@@ -6,8 +6,9 @@
  * Change Logs:
  * Date           Author       Notes
  * 2018-11-14     longmain     first version
- * 2018-06-13     longmain     add hexstring to string
- * 2018-06-13     longmain     add net close callback
+ * 2019-06-13     longmain     add hexstring to string
+ * 2019-06-13     longmain     add net close callback
+ * 2019-06-13     longmain     del qsdk_onenet_init_environment
  */
 
 #ifndef __QSDK_H__
@@ -195,8 +196,6 @@ struct onenet_stream
 
 typedef struct onenet_stream *qsdk_onenet_stream_t;
 
-
-void qsdk_onenet_init_environment(void);
 qsdk_onenet_stream_t qsdk_onenet_object_init(int objid,int insid,int resid,int inscount,char *bitmap,int atts,int acts,int type);
 int qsdk_onenet_delete_instance(void);
 int qsdk_onenet_delete_object(qsdk_onenet_stream_t stream);

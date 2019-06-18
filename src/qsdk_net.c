@@ -6,9 +6,9 @@
  * Change Logs:
  * Date           Author       Notes
  * 2018-11-14     longmain     first version
- * 2018-06-12     longmain     Fix UDP connect errors
- * 2018-06-13     longmain     add hexstring to string
- * 2018-06-13     longmain     add net close callback
+ * 2019-06-12     longmain     Fix UDP connect errors
+ * 2019-06-13     longmain     add hexstring to string
+ * 2019-06-13     longmain     add net close callback
  */
 
 #include "qsdk.h"
