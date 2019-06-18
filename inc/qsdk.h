@@ -15,7 +15,7 @@
 
 #define __QSDK_H__
 #include <rtthread.h>
-#include "board.h"
+#include "rtdevice.h"
 enum qsdk_nb_status_type
 {
 	qsdk_nb_status_module_init_ok=0,
