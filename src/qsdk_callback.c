@@ -36,8 +36,10 @@
 *****************************************************/
 void qsdk_rtc_set_time_callback(int year,char month,char day,char hour,char min,char sec,char week)
 { 
+#ifdef RT_USING_RTC
 	set_date(year,month,day);
 	set_time(hour,min,sec);
+#endif
 }
 
 /*************************************************************
