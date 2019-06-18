@@ -647,12 +647,12 @@ int qsdk_iot_check_address(void)
 	at_resp_parse_line_args(nb_resp,2,"%s",str);
 
 
-	LOG_D("NCDP=%s\r\n",str);
+	LOG_D("%s\r\n",str);
 
 #if (defined QSDK_USING_M5310A) &&(defined QSDK_USING_IOT)
 	if(rt_strstr(str,QSDK_IOT_ADDRESS)!=RT_NULL) 		return RT_EOK;
 #else
-	if(rt_strstr(str,"0.0.0.0")!=RT_NULL) 		return RT_EOK;
+	if(rt_strstr(str,"+NCDP:0.0.0.0")!=RT_NULL) 		return RT_EOK;
 #endif
 
 	return RT_ERROR;
@@ -683,14 +683,15 @@ int qsdk_iot_set_address(void)
 	LOG_D("AT+NCDP=%s,%s\r\n",QSDK_IOT_ADDRESS,QSDK_IOT_PORT);
 	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+NCDP=%s,%s",QSDK_IOT_ADDRESS,QSDK_IOT_PORT)!=RT_EOK)
 #else
-	LOG_D("AT+NCDP=%s,%s\r\n","0.0.0.0","5683");
-	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+NCDP=%s,%s","0.0.0.0","5683")!=RT_EOK)
+	LOG_D("AT+NCDP=0.0.0.0,5683");
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+NCDP=0.0.0.0,5683")!=RT_EOK)
 #endif
 	{
 		LOG_E("ÉèÖÃNCDP·þÎñÆ÷Ê§°Ü\r\n");
 		return RT_ERROR;
 	}
-	rt_thread_delay(200);
+	qsdk_iot_check_address();
+	rt_thread_delay(1500);
 
 	if(qsdk_nb_reboot()==RT_EOK)	return RT_EOK;
 
