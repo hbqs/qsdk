@@ -71,11 +71,11 @@ at_client_t nb_client = RT_NULL;
 at_response_t nb_resp=RT_NULL;
 
 //定义任务控制块
-rt_thread_t hand_thread_id=RT_NULL;
+rt_thread_t qsdk_thread_id=RT_NULL;
 
 
 //声明 函数
-void hand_thread_entry(void* parameter);
+void qsdk_thread_entry(void* parameter);
 
 //定义邮箱控制块
 static rt_mailbox_t nb_mail=RT_NULL;
@@ -847,7 +847,7 @@ if(rt_strstr(data,"*ATREADY: 1")!=RT_NULL)
 *
 *	说明：		
 *************************************************************/
-void hand_thread_entry(void* parameter)
+void qsdk_thread_entry(void* parameter)
 {
 	rt_err_t status=RT_EOK;
 	char *event;
@@ -1011,7 +1011,7 @@ int qsdk_init_environment(void)
 	}	
 	at_obj_set_urc_table(nb_client,nb_urc_table,sizeof(nb_urc_table)/sizeof(nb_urc_table[0]));
 	//create mail
-	nb_mail=rt_mb_create("nb_mail",
+	nb_mail=rt_mb_create("qsdk_mb",
 													10,
 													RT_IPC_FLAG_FIFO);
 	if(nb_mail==RT_NULL)
@@ -1027,14 +1027,14 @@ int qsdk_init_environment(void)
 		return RT_ERROR;
 	}
 	//create event hand fun
-	hand_thread_id=rt_thread_create("hand_thread",
-																	hand_thread_entry,
+	qsdk_thread_id=rt_thread_create("qsdk_th",
+																	qsdk_thread_entry,
 																	RT_NULL,
 																	QSDK_HAND_THREAD_STACK_SIZE,
 																	7,
 																	50);
-	if(hand_thread_id!=RT_NULL)
-		rt_thread_startup(hand_thread_id);
+	if(qsdk_thread_id!=RT_NULL)
+		rt_thread_startup(qsdk_thread_id);
 	else
 	{
 		LOG_E("create event hand fun failure\r\n");

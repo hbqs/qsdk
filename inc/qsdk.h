@@ -199,6 +199,7 @@ typedef struct onenet_stream *qsdk_onenet_stream_t;
 qsdk_onenet_stream_t qsdk_onenet_object_init(int objid,int insid,int resid,int inscount,char *bitmap,int atts,int acts,int type);
 int qsdk_onenet_delete_instance(void);
 int qsdk_onenet_delete_object(qsdk_onenet_stream_t stream);
+int qsdk_onenet_open(void);
 int qsdk_onenet_close(void);
 int qsdk_onenet_update_time(int flge);
 int qsdk_onenet_notify(qsdk_onenet_stream_t stream,int len,qsdk_onenet_value_t data,int flge);

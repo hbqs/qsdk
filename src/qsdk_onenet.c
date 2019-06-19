@@ -260,6 +260,8 @@ int qsdk_onenet_delete_instance(void)
 		LOG_E("delete onenet instance failure\r\n");
 		return RT_ERROR;
 	}
+	rt_memset(&onenet_device_table,0,sizeof(onenet_device_table));		 	//清空数据流结构体
+	rt_memset(&onenet_stream_table,0,sizeof(onenet_stream_table));		 	//清空数据流结构体
 #ifdef QSDK_USING_DEBUG
 	LOG_D("onenet instace delete success\r\n");
 #endif
@@ -375,7 +377,7 @@ int qsdk_onenet_delete_object(qsdk_onenet_stream_t stream)
 *
 * 返回值： 0 成功 	1失败
 *****************************************************/
-static int onenet_open(void)
+int qsdk_onenet_open(void)
 {
 	rt_uint32_t status;
 	onenet_device_table.lifetime=QSDK_ONENET_LIFE_TIME;
@@ -897,7 +899,7 @@ int qsdk_onenet_quick_start(void)
 	}
 	onenet_device_table.initstep=3;
 #endif
-	if(onenet_open()!=RT_EOK)	goto failure;							// 执行 onenet 登录函数
+	if(qsdk_onenet_open()!=RT_EOK)	goto failure;							// 执行 onenet 登录函数
 
 	return RT_EOK;
 
@@ -911,10 +913,7 @@ int qsdk_onenet_quick_start(void)
 #endif
 	{
 		qsdk_onenet_close();		
-	}
-#if	(defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)||(defined QSDK_USING_M5311)			
-	qsdk_onenet_delete_instance();			//删除 模组 instance
-#endif									
+	}								
 	return RT_ERROR;	
 }
 /****************************************************
@@ -1322,9 +1321,12 @@ void onenet_event_func(char *event)
 					rt_event_send(nb_event,event_reg_success);			
 				break;
 			case  7:
-					LOG_E("onenet 平台登陆失败  设备未在平台注册或者在平台填写了Auth_Code，需要清空 Auth_Code 信息");
-					onenet_device_table.event_status=qsdk_onenet_status_failure;
-					rt_event_send(nb_event,event_reg_fail);			
+					if(onenet_device_table.event_status!=qsdk_onenet_status_failure)
+					{
+						LOG_E("onenet 平台登陆失败  设备未在平台注册或者在平台填写了Auth_Code，需要清空 Auth_Code 信息");
+						onenet_device_table.event_status=qsdk_onenet_status_failure;
+						rt_event_send(nb_event,event_reg_fail);	
+					}						
 				break;
 			case  8:
 #ifdef QSDK_USING_DEBUG 
