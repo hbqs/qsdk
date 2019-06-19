@@ -347,7 +347,7 @@ int qsdk_net_close_socket(qsdk_net_client_t client)
 	LOG_D("AT+NSOCL=%d\r\n",client->socket);
 	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+NSOCL=%d",client->socket)!=RT_EOK) return RT_ERROR;
 	
-	client->connect_status=0;
+	rt_memset(client,0,sizeof(client));
 	return RT_EOK;
 }
 
