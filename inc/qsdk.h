@@ -81,6 +81,7 @@ void qsdk_nb_enter_psm(void);
 int qsdk_nb_exit_psm(void);
 int qsdk_nb_get_psm_status(void);
 char *qsdk_nb_query_ip(void);
+int qsdk_nb_ping_ip(char *ip);
 int qsdk_iot_check_address(void);
 int qsdk_iot_set_address(void);
 int string_to_hex(const char *pString, int len, char *pHex);
