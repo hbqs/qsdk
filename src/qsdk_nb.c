@@ -29,6 +29,9 @@
 #define EVENT_REBOOT 						(0x99<<1)
 #define EVENT_PSM_UNLOOK_AT		 	(0x98<<1)
 #define EVENT_EXIT_PSM 					(0x97<<1)
+#define EVENT_PING_OK						(0x96<<1)
+#define EVENT_PING_ERROR				(0x95<<1)
+
 
 //引用业务处理函数
 #ifdef QSDK_USING_NET
@@ -505,12 +508,11 @@ void qsdk_nb_enter_psm(void)
 #ifdef QSDK_USING_ME3616
 	LOG_D("AT+ZSLR\r\n");
 	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+ZSLR")!=RT_EOK)
-	LOG_E("nb-iot set psm cmd failure\r\n");
-#endif
-#ifdef QSDK_USING_M5311
+		LOG_E("nb-iot set psm cmd failure\r\n");
+#elif (defined QSDK_USING_M5311)
 	LOG_D("AT*ENTERSLEEP\r\n");
 	if(at_obj_exec_cmd(nb_client,nb_resp,"AT*ENTERSLEEP")!=RT_EOK)
-	LOG_E("nb-iot set psm cmd failure\r\n");
+		LOG_E("nb-iot set psm cmd failure\r\n");
 #endif
 	rt_mutex_take(nb_client->lock,RT_WAITING_FOREVER);
 	nb_device_table.psm_status=qsdk_nb_status_enter_psm;
@@ -625,6 +627,36 @@ char *qsdk_nb_query_ip(void)
 	
 	at_resp_parse_line_args(nb_resp,2,"+CGPADDR:0,%s",nb_device_table.ip);
 	return nb_device_table.ip;
+}
+
+/*************************************************************
+*	函数名称：	qsdk_nb_ping_ip
+*
+*	函数功能：	ping服务器IP
+*
+*	入口参数：	IP：需要ping 的IP地址
+*
+*	返回参数：	0 成功  1	失败
+*
+*	说明：		
+*************************************************************/
+int qsdk_nb_ping_ip(char *ip)
+{
+	rt_uint32_t status;
+#if	(defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)	
+	LOG_D("AT+NPING=%s\r\n",ip);
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+NPING=%s",ip)!=RT_EOK) return RT_ERROR;
+#elif (defined QSDK_USING_M5311)
+	LOG_D("AT+PING=%s,,,1,,1\r\n",ip);
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+PING=%s,,,1,,1",ip)!=RT_EOK) return RT_ERROR;
+#endif	
+	
+	rt_event_recv(nb_event,EVENT_PING_ERROR|EVENT_PING_OK,RT_EVENT_FLAG_OR|RT_EVENT_FLAG_CLEAR,60000,&status);
+	if(status==EVENT_PING_OK)
+	{
+		return RT_EOK;
+	}	
+	return RT_ERROR;
 }
 
 #if	(defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)
@@ -861,15 +893,33 @@ void qsdk_thread_entry(void* parameter)
 		{
 #if	(defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)
 			if(rt_strstr(event,"REBOOT_")!=RT_NULL)
-#endif
-#ifdef QSDK_USING_M5311
+#elif (defined QSDK_USING_M5311)
 			if(rt_strstr(event,"*ATREADY")!=RT_NULL)
-#endif
-#ifdef QSDK_USING_ME3616
+#elif (defined QSDK_USING_ME3616)
 			if(rt_strstr(event,"*MATREADY")!=RT_NULL)
 #endif
 			{
 				nb_reboot_func(event);
+			}
+#if	(defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)
+			else if(rt_strstr(event,"+NPING:")!=RT_NULL)
+				
+#elif (defined QSDK_USING_M5311)
+			else if(rt_strstr(event,"+PING:")!=RT_NULL)
+#endif
+			{
+				LOG_D("%s\r\n",event);
+				rt_event_send(nb_event,EVENT_PING_OK);		
+			}
+#if (defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)
+			else if(rt_strstr(event,"+NPINGERR:")!=RT_NULL)
+//#endif
+#elif	(defined QSDK_USING_M5311)
+			else if(rt_strstr(event,"+PINGERR:")!=RT_NULL)	
+#endif
+			{
+				LOG_D("%s\r\n",event);
+				rt_event_send(nb_event,EVENT_PING_ERROR);
 			}
 			else
 			{
@@ -930,29 +980,13 @@ static struct at_urc nb_urc_table[]={
 //模块开机重启检测
 #if	(defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)
 	{"REBOOT_",           "\r",nb_event_func},
-#endif	
-#ifdef QSDK_USING_M5311
-	{"*ATREADY:",           "\r",nb_event_func},
-#endif	
-#ifdef QSDK_USING_ME3616
-	{"*MATREADY:",           "\r",nb_event_func},
-#endif	
-	
+	{"+NPING",           "\r",nb_event_func},
+	{"+NPINGERR",           "\r",nb_event_func},
 //如果启用TCP/UDP支持，增加NET函数调用
 #ifdef QSDK_USING_NET
 	{"+NSONMI",           "\r",nb_event_func},
 	{"+NSOCLI",           "\r",nb_event_func},
 	{"CONNECT OK",           "\r",nb_event_func},
-#endif
-	
-//如果启用onenet支持，增加onenet函数调用
-#ifdef QSDK_USING_ONENET
-	{"+MIPLREAD",         "\r",nb_event_func},
-	{"+MIPLWRITE",        "\r",nb_event_func},
-	{"+MIPLEXECUTE",      "\r",nb_event_func},
-	{"+MIPLOBSERVE",      "\r",nb_event_func},
-	{"+MIPLDISCOVER",     "\r",nb_event_func},
-	{"+MIPLEVENT",				"\r",nb_event_func},
 #endif
 	
 //如果启用iot支持，增加iot函数调用
@@ -974,6 +1008,23 @@ static struct at_urc nb_urc_table[]={
 	{"+MQTTPINGRESP:",		"\r",nb_event_func},
 	{"+MQTTTO:",					"\r",nb_event_func},
 	{"+MQTTREC:",					"\r",nb_event_func},
+#endif
+
+#elif (defined QSDK_USING_M5311)
+	{"*ATREADY:",           "\r",nb_event_func},
+#elif (defined QSDK_USING_ME3616)
+	{"*MATREADY:",           "\r",nb_event_func},
+#endif	
+	
+
+//如果启用onenet支持，增加onenet函数调用
+#ifdef QSDK_USING_ONENET
+	{"+MIPLREAD",         "\r",nb_event_func},
+	{"+MIPLWRITE",        "\r",nb_event_func},
+	{"+MIPLEXECUTE",      "\r",nb_event_func},
+	{"+MIPLOBSERVE",      "\r",nb_event_func},
+	{"+MIPLDISCOVER",     "\r",nb_event_func},
+	{"+MIPLEVENT",				"\r",nb_event_func},
 #endif
 };
 /*************************************************************
