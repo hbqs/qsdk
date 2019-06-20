@@ -49,10 +49,6 @@ struct nb_device
 	int  net_connect_ok;
 	int  error;
 	int  csq;
-	int	 notify_status;
-#ifdef QSDK_USING_IOT
-	int	iot_connect_status;
-#endif
 	char imsi[16];
 	char imei[16];
 	char ip[16];

@@ -24,13 +24,16 @@
 
 #ifdef QSDK_USING_IOT
 
+#define EVENT_UPDATE_OK						(0x70<<1)
+#define EVENT_UPDATE_ERROR				(0x71<<1)
 
 //如果启用IOT支持
 
 extern at_response_t nb_resp;
 extern at_client_t	nb_client;
-extern struct nb_device nb_device_table;
 
+//定义事件控制块
+extern rt_event_t nb_event;
 
 /*************************************************************
 *	函数名称：	qsdk_iot_open_update_status
@@ -88,7 +91,7 @@ int qsdk_iot_open_down_date_status(void)
 *************************************************************/
 int qsdk_iot_update(char *str)
 {
-	nb_device_table.notify_status=qsdk_iot_status_notify_init;
+	rt_uint32_t status;
 	char *buf=rt_calloc(1,strlen(str)*2);
 	if(buf==RT_NULL)
 	{
@@ -104,20 +107,18 @@ int qsdk_iot_update(char *str)
 		rt_free(buf);
 		return RT_ERROR;
 	}
-	
-	rt_thread_delay(100);
-	if(nb_device_table.notify_status==qsdk_iot_status_notify_success)
-	{
-#ifdef QSDK_USING_DEBUG
-		LOG_D("qsdk iot notify success\r\n");
-#endif
-		rt_free(buf);
-		return RT_EOK;
-	}
-	
-	nb_device_table.error=qsdk_iot_status_notify_failure;
-	LOG_E("iot date notify failer\r\n");
 	rt_free(buf);
+	if(rt_event_recv(nb_event,EVENT_UPDATE_ERROR|EVENT_UPDATE_OK,RT_EVENT_FLAG_OR|RT_EVENT_FLAG_CLEAR,60000,&status)==RT_EOK)
+	{
+		if(status==EVENT_UPDATE_OK)
+			return  RT_EOK;
+		else
+		{
+			LOG_E("iot date notify failer\r\n");
+			return RT_ERROR;
+		}
+	}
+	LOG_E("iot date notify failer\r\n");
 	return RT_ERROR;
 }
 
@@ -128,22 +129,32 @@ void iot_event_func(char *event)
 		{
 			char *len;
 			char *str;
-#ifdef QSDK_USING_DEBUG
-			LOG_D("%s\r\n",event);
-#endif			
+			LOG_D("%s\r\n",event);		
 			result=strtok(event,":");
 			len=strtok(NULL,",");
-			str=strtok(NULL,",");
+			str=strtok(NULL,"\r");
 
-			if(qsdk_iot_data_callback(str,atoi(len))!=RT_EOK)
+			char *buf=rt_calloc(1,atoi(len));
+			if(str==RT_NULL)
+			{
+				LOG_E("iot callack create buf error\r\n");
+				rt_free(buf);
+			}
+			hexstring_to_string(str,atoi(len),buf);
+			if(qsdk_iot_data_callback(buf,atoi(len))!=RT_EOK)
+			{
+				rt_free(buf);
 				LOG_E("qsdk iot data callback failure\r\n");
+			}
+			rt_free(buf);
 		}
 		else if(rt_strstr(event,"+NSMI:")!=RT_NULL)
 		{
-#ifdef QSDK_USING_DEBUG
 			LOG_D("%s\r\n",event);
-#endif				
-			nb_device_table.notify_status=qsdk_iot_status_notify_success;
+			if(rt_strstr(event,"+NSMI:SENT")!=RT_NULL)
+				rt_event_send(nb_event,EVENT_UPDATE_OK);
+			if(rt_strstr(event,"+NSMI:DISCARDED")!=RT_NULL)
+				rt_event_send(nb_event,EVENT_UPDATE_ERROR);
 		}
 }
 #endif

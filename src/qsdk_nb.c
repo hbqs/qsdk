@@ -82,6 +82,7 @@ void qsdk_thread_entry(void* parameter);
 
 //定义邮箱控制块
 static rt_mailbox_t nb_mail=RT_NULL;
+
 //定义事件控制块
 rt_event_t nb_event=RT_NULL;
 
