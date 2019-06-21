@@ -68,9 +68,6 @@ struct onenet_device
 	int connect_status;
 	int close_status;
 	int notify_ack;
-	int(*read_callback)(int msgid,int insid,int resid);
-	int(*write_callback)(int len,char* value);
-	int(*execute_callback)(int len,char* cmd);
 };
 
 
@@ -108,9 +105,6 @@ int qsdk_onenet_init_environment(void)
 	onenet_device_table.lifetime=QSDK_ONENET_LIFE_TIME;
 	onenet_device_table.connect_status=qsdk_onenet_status_init;			 		//onenet连接状态初始化
 	onenet_device_table.initstep=0;												 							//初始化步骤设置为0
-	onenet_device_table.write_callback=qsdk_onenet_write_rsp_callback; 	//write回调函数映射
-	onenet_device_table.read_callback=qsdk_onenet_read_rsp_callback;	 	//read 回掉函数映射
-	onenet_device_table.execute_callback=qsdk_onenet_exec_rsp_callback;	//exec 回调函数映射
 	return RT_EOK;
 }
 
@@ -636,7 +630,7 @@ static int onenet_read_rsp(int msgid,int objid,int insid,int resid)
 	}
 
 	//进入读回调函数
-		if(onenet_device_table.read_callback(msgid,insid,resid)==RT_EOK)
+		if(qsdk_onenet_read_rsp_callback(msgid,insid,resid)==RT_EOK)
 		{
 #ifdef QSDK_USING_DEBUG
 			LOG_D("onenet read rsp success\r\n");
@@ -677,10 +671,9 @@ static int onenet_write_rsp(int msgid,int objid,int insid,int resid,int valuetyp
 		//判断当前objectid 是否为即将要读的信息
 		if(onenet_stream_table[i].objid==objid&&onenet_stream_table[i].insid==insid&&onenet_stream_table[i].resid==resid)
 		{
-	
 			onenet_stream_table[i].write_status=10;
 			//进入 write 回调函数
-			if(onenet_device_table.write_callback(len,value)==RT_EOK)
+			if(qsdk_onenet_write_rsp_callback(len,value)==RT_EOK)
 			{
 				result=qsdk_onenet_status_result_write_success;
 #ifdef QSDK_USING_DEBUG
@@ -731,7 +724,7 @@ static int onenet_execute_rsp(int msgid,int objid,int insid,int resid,int len,ch
 		{
 			onenet_stream_table[i].exec_status=10;
 			//进入 execute 回调函数
-			if(onenet_device_table.execute_callback(len,cmd)==RT_EOK)
+			if(qsdk_onenet_exec_rsp_callback(len,cmd)==RT_EOK)
 			{
 				result=qsdk_onenet_status_result_write_success;
 #ifdef QSDK_USING_DEBUG
@@ -1493,7 +1486,6 @@ void onenet_event_func(char *event)
 		resourceid=strtok(NULL,",");
 		value_len=strtok(NULL,",");
 		value=strtok(NULL,",");
-		
 		//执行 onenet exec 响应函数
 		if(onenet_execute_rsp(atoi(msgid),atoi(objectid),atoi(instanceid),atoi(resourceid),atoi(value_len),value)!=RT_EOK)
 			LOG_E("rsp onenet execute failure\r\n");
