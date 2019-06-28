@@ -126,6 +126,7 @@ int qsdk_net_send_data(qsdk_net_client_t client,char *str);
 int qsdk_net_get_client_revice(qsdk_net_client_t client);
 int qsdk_net_get_client_connect(qsdk_net_client_t client);
 int qsdk_net_close_socket(qsdk_net_client_t client);
+int qsdk_net_clear_environment(void);
 #endif
 
 //qsdk_onenet_fun
@@ -206,6 +207,7 @@ int qsdk_onenet_get_connect(void);
 int qsdk_onenet_get_object_read(qsdk_onenet_stream_t stream);
 int qsdk_onenet_get_object_write(qsdk_onenet_stream_t stream);
 int qsdk_onenet_get_object_exec(qsdk_onenet_stream_t stream);
+int qsdk_onenet_clear_environment(void);
 
 #if	(defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)
 int qsdk_onenet_notify_and_ack(qsdk_onenet_stream_t stream,int len,qsdk_onenet_value_t data,int flge);

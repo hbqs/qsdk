@@ -14,13 +14,16 @@
 #include "stdio.h"
 #include "stdlib.h"
 
-#define LOG_TAG              "[QSDK/CALLBACK]"
+#define DBG_ENABLE
+#define DBG_COLOR
+#define DBG_SECTION_NAME              "[QSDK/CALLBACK]"
 #ifdef QSDK_USING_LOG
-#define LOG_LVL              LOG_LVL_DBG
+#define DBG_LEVEL                      DBG_LOG
 #else
-#define LOG_LVL              LOG_LVL_INFO
-#endif
-#include <ulog.h>
+#define DBG_LEVEL                      DBG_INFO
+#endif /* QSDK_DEBUG */
+
+#include <rtdbg.h>
 
 
 /****************************************************
@@ -71,9 +74,7 @@ void qsdk_net_close_callback(void)
 *****************************************************/
 int qsdk_net_data_callback(char *data,int len)
 {
-
-	LOG_D("enter net callback\r\n");
-	LOG_D("udp client rev data=%d,%s\r\n",len,data);
+	LOG_I("enter net callback,udp client rev data=%d,%s\r\n",len,data);
 	return RT_EOK;
 }
 
@@ -90,8 +91,7 @@ int qsdk_net_data_callback(char *data,int len)
 *****************************************************/
 int qsdk_iot_data_callback(char *data,int len)
 {
-	LOG_D("enter iot callback\r\n");
-	LOG_D("rev data=%d,%s\r\n",len,data);
+	LOG_I("enter iot callback,rev data=%d,%s\r\n",len,data);
 	return RT_EOK;
 }	
 /****************************************************
@@ -105,7 +105,7 @@ int qsdk_iot_data_callback(char *data,int len)
 *****************************************************/
 int qsdk_onenet_close_callback()
 {
-	LOG_D("enter close onenent callback\r\n");
+	LOG_I("enter close onenent callback\r\n");
 
 	return RT_EOK;
 }
@@ -120,7 +120,7 @@ int qsdk_onenet_close_callback()
 *****************************************************/
 int qsdk_onenet_read_rsp_callback(int msgid,int insid,int resid)
 {
-	LOG_D("enter read dsp callback\r\n");
+	LOG_I("enter read dsp callback\r\n");
 
 	return RT_EOK;
 }
@@ -137,7 +137,7 @@ int qsdk_onenet_read_rsp_callback(int msgid,int insid,int resid)
 *****************************************************/
 int qsdk_onenet_write_rsp_callback(int len,char* value)
 {
-	LOG_D("enter write dsp callback\r\n");	
+	LOG_I("enter write dsp callback\r\n");	
 	return RT_EOK;
 }
 /****************************************************
@@ -153,9 +153,7 @@ int qsdk_onenet_write_rsp_callback(int len,char* value)
 *****************************************************/
 int qsdk_onenet_exec_rsp_callback(int len,char* cmd)
 {
-
-	LOG_D("enter exec dsp callback\r\n");
-	LOG_D("exec data len:%d   data=%s\r\n",len,cmd);
+	LOG_I("enter exec dsp callback,exec data len:%d   data=%s\r\n",len,cmd);
 	return RT_EOK;
 }
 
@@ -172,10 +170,7 @@ int qsdk_onenet_exec_rsp_callback(int len,char* cmd)
 *****************************************************/
 void qsdk_onenet_fota_callback(void)
 {
-	LOG_D("enter fota callback\r\n");
-
-
-
+	LOG_I("enter fota callback\r\n");
 }
 
 /****************************************************
@@ -191,8 +186,7 @@ void qsdk_onenet_fota_callback(void)
 
 int qsdk_mqtt_data_callback(char *topic,char *mesg,int mesg_len)
 {
-	LOG_D("enter mqtt data callback\r\n");
-	rt_kprintf("enter mqtt callback  mesg:%s,len:%d\r\n",mesg,mesg_len);
+	LOG_I("enter mqtt callback  mesg:%s,len:%d\r\n",mesg,mesg_len);
 
 	return RT_EOK;
 }
@@ -209,8 +203,8 @@ int qsdk_mqtt_data_callback(char *topic,char *mesg,int mesg_len)
 *****************************************************/
 void qsdk_nb_reboot_callback(void)
 {
-	LOG_E("enter reboot callback\r\n");
-	
+	LOG_I("enter reboot callback\r\n");
+
 }
 
 

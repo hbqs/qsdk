@@ -17,13 +17,16 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define LOG_TAG              "[QSDK/NET]"
+#define DBG_ENABLE
+#define DBG_COLOR
+#define DBG_SECTION_NAME              "[QSDK/NET]"
 #ifdef QSDK_USING_LOG
-#define LOG_LVL              LOG_LVL_DBG
+#define DBG_LEVEL                      DBG_LOG
 #else
-#define LOG_LVL              LOG_LVL_INFO
-#endif
-#include <ulog.h>
+#define DBG_LEVEL                      DBG_INFO
+#endif /* QSDK_DEBUG */
+
+#include <rtdbg.h>
 
 
 
@@ -113,6 +116,7 @@ int qsdk_net_create_socket(qsdk_net_client_t client)
 		{
 			goto __exit;
 		}
+		client->connect_status=NET_CONNECT_SUCCESS;
 	}
 	else goto __exit;
 
@@ -162,10 +166,7 @@ int qsdk_net_connect_to_server(qsdk_net_client_t client)
 			client->connect_status=NET_CONNECT_SUCCESS;
 			return RT_EOK;
 		}
-		
-
 	}
-	else if(client->type==QSDK_NET_TYPE_UDP)	client->connect_status=NET_CONNECT_SUCCESS;
 	return RT_EOK;
 }
 /*************************************************************
@@ -350,7 +351,23 @@ int qsdk_net_close_socket(qsdk_net_client_t client)
 	rt_memset(client,0,sizeof(client));
 	return RT_EOK;
 }
+/*************************************************************
+*	函数名称：	qsdk_net_clear_environment
+*
+*	函数功能：	清理net结构体环境
+*
+*	入口参数：	无
+*
+*	返回参数：	0 成功  1	失败
+*
+*	说明：		
+*************************************************************/
+int qsdk_net_clear_environment(void)
+{	
+	rt_memset(net_client_table,0,sizeof(net_client_table));
 
+	return RT_EOK;
+}
 /*************************************************************
 *	函数名称：	net_event_func
 *

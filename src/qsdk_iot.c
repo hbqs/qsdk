@@ -13,13 +13,16 @@
 #include "string.h"
 #include "stdlib.h"
 
-#define LOG_TAG              "[QSDK/IOT]"
+#define DBG_ENABLE
+#define DBG_COLOR
+#define DBG_SECTION_NAME              "[QSDK/IOT]"
 #ifdef QSDK_USING_LOG
-#define LOG_LVL              LOG_LVL_DBG
+#define DBG_LEVEL                      DBG_LOG
 #else
-#define LOG_LVL              LOG_LVL_INFO
-#endif
-#include <ulog.h>
+#define DBG_LEVEL                      DBG_INFO
+#endif /* QSDK_DEBUG */
+
+#include <rtdbg.h>
 
 
 #ifdef QSDK_USING_IOT

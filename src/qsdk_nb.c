@@ -17,13 +17,16 @@
 #include "qsdk.h"
 #include <at.h>
 
-#define LOG_TAG              "[QSDK/NB]"
+#define DBG_ENABLE
+#define DBG_COLOR
+#define DBG_SECTION_NAME              "[QSDK/NB]"
 #ifdef QSDK_USING_LOG
-#define LOG_LVL              LOG_LVL_DBG
+#define DBG_LEVEL                      DBG_LOG
 #else
-#define LOG_LVL              LOG_LVL_INFO
-#endif
-#include <ulog.h>
+#define DBG_LEVEL                      DBG_INFO
+#endif /* QSDK_DEBUG */
+
+#include <rtdbg.h>
 
 //…Ë÷√event ¬º˛
 #define EVENT_REBOOT 						(0x99<<1)

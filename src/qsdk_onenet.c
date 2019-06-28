@@ -14,13 +14,16 @@
 #include "string.h"
 #include "stdlib.h"
 
-#define LOG_TAG              "[QSDK/ONENET]"
+#define DBG_ENABLE
+#define DBG_COLOR
+#define DBG_SECTION_NAME              "[QSDK/ONENET]"
 #ifdef QSDK_USING_LOG
-#define LOG_LVL              LOG_LVL_DBG
+#define DBG_LEVEL                      DBG_LOG
 #else
-#define LOG_LVL              LOG_LVL_INFO
-#endif
-#include <ulog.h>
+#define DBG_LEVEL                      DBG_INFO
+#endif /* QSDK_DEBUG */
+
+#include <rtdbg.h>
 
 #ifdef QSDK_USING_ONENET
 
@@ -433,7 +436,7 @@ int qsdk_onenet_open(void)
 	}	
 }
 /****************************************************
-* 函数名称： onenet_close
+* 函数名称： qsdk_onenet_close
 *
 * 函数作用： 在onenet 平台注销设备
 *
@@ -460,7 +463,7 @@ int qsdk_onenet_close(void)
 #ifdef QSDK_USING_DEBUG
 	LOG_D("close onenet instance success\r\n");
 #endif
-	onenet_device_table.connect_status=qsdk_onenet_status_success;
+	onenet_device_table.connect_status=qsdk_onenet_status_init;
 	return RT_EOK;
 }
 /****************************************************
@@ -1106,6 +1109,26 @@ int qsdk_onenet_notify_and_ack(qsdk_onenet_stream_t stream,int len,qsdk_onenet_v
 	return RT_EOK;
 }
 #endif
+
+/*************************************************************
+*	函数名称：	qsdk_onenet_clear_environment
+*
+*	函数功能：	清理net结构体环境
+*
+*	入口参数：	无
+*
+*	返回参数：	0 成功  1	失败
+*
+*	说明：		
+*************************************************************/
+int qsdk_onenet_clear_environment(void)
+{	
+	rt_memset(&onenet_device_table,0,sizeof(onenet_device_table));		 	//清空数据流结构体
+	rt_memset(&onenet_stream_table,0,sizeof(onenet_stream_table));		 	//清空数据流结构体
+
+	return RT_EOK;
+}
+
 /****************************************************
 * 函数名称： head_node_parse
 *
