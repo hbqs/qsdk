@@ -30,21 +30,25 @@ qsdk开放源码，nb控制块、协议处理块均采用数据结构方式，�
 
 ![](https://github.com/hbqs/qsdk/blob/master/help/png/3.png?raw=true)
 
-4. **进入qsdk的选项配置（自带默认属性）**
+4. **点击进去选择支持的nb-iot模块（目前支持M5310、M5310A、M5311）**
 
 ![](https://github.com/hbqs/qsdk/blob/master/help/png/4.png?raw=true)
 
-5. **为QSDK选择一款模组**
+5. **选择需要支持的nb-iot模块**
 
 ![](https://github.com/hbqs/qsdk/blob/master/help/png/5.png?raw=true)
 
-6. **更新软件包**
+6. **设置需要支持的引脚信息和协议**
 
 ![](https://github.com/hbqs/qsdk/blob/master/help/png/6.png?raw=true)
 
-7. **编译生成mdk/iar工程**
+7. **更新软件包**
 
 ![](https://github.com/hbqs/qsdk/blob/master/help/png/7.png?raw=true)
+
+8. **编译生成mdk/iar工程**
+
+![](https://github.com/hbqs/qsdk/blob/master/help/png/8.png?raw=true)
 
 
 
