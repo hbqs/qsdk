@@ -9,6 +9,7 @@
  * 2019-06-13     longmain     add hexstring to string
  * 2019-06-13     longmain     add net close callback
  * 2019-06-13     longmain     del qsdk_onenet_init_environment
+ * 2019-06-30     longmain     add qsdk_nb_clear_environment
  */
 
 #ifndef __QSDK_H__
@@ -78,8 +79,7 @@ int qsdk_nb_exit_psm(void);
 int qsdk_nb_get_psm_status(void);
 char *qsdk_nb_query_ip(void);
 int qsdk_nb_ping_ip(char *ip);
-int qsdk_iot_check_address(void);
-int qsdk_iot_set_address(void);
+void qsdk_nb_clear_environment(void);
 int string_to_hex(const char *pString, int len, char *pHex);
 void hexstring_to_string(char * pHex,int len, char * pString);
 

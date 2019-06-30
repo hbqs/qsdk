@@ -12,6 +12,7 @@
  * 2019-06-12     longmain     Separated qsdk nb quick connect to net
  * 2019-06-13     longmain     add hexstring to string
  * 2019-06-13     longmain     qsdk environment is auto init by the system app
+ * 2019-06-30     longmain     add qsdk_nb_clear_environment
  */
 
 #include "qsdk.h"
@@ -69,7 +70,15 @@ enum nb_reboot_type
 	NB_MODULE_REBOOT_CLOSE=35
 };
 
-
+struct nb_pin_mode
+{
+	int pwr_high;
+	int pwr_low;
+	int rst_high;
+	int rst_low;
+	int wake_in_high;
+	int wake_in_low;
+};
 
 
 //定义 NB模块命令相应结构体指针
@@ -89,9 +98,24 @@ static rt_mailbox_t nb_mail=RT_NULL;
 //定义事件控制块
 rt_event_t nb_event=RT_NULL;
 
-
+static struct nb_pin_mode nb_pin={0};
 struct nb_device nb_device_table={0};
 
+/*************************************************************
+*	函数名称：	qsdk_nb_clear_environment
+*
+*	函数功能：	清空NB模组当前状态
+*
+*	入口参数：	无
+*
+*	返回参数：	无
+*
+*	说明：		
+*************************************************************/
+void qsdk_nb_clear_environment(void)
+{
+	rt_memset(&nb_device_table,0,sizeof(nb_device_table));
+}
 /*************************************************************
 *	函数名称：	nb_hw_io_init
 *
@@ -105,21 +129,25 @@ struct nb_device nb_device_table={0};
 *************************************************************/
 int nb_io_init(void)
 {
+#ifdef QSDK_USING_PWRKEY
 	rt_pin_mode(QSDK_PWRKEY_PIN,PIN_MODE_OUTPUT);
+#endif
 	rt_pin_mode(QSDK_RESET_PIN,PIN_MODE_OUTPUT);
 
 	//给开发板 pwrkey 引脚上电
-	rt_pin_write(QSDK_PWRKEY_PIN,PIN_HIGH);
-	rt_pin_write(QSDK_RESET_PIN,PIN_HIGH);
+#ifdef QSDK_USING_PWRKEY
+	rt_pin_write(QSDK_PWRKEY_PIN,nb_pin.pwr_high);
+#endif
+	rt_pin_write(QSDK_RESET_PIN,nb_pin.rst_high);
 	
 #if	(defined QSDK_USING_M5311)||(defined QSDK_USING_ME3616)	
 	rt_pin_mode(QSDK_WAKEUP_IN_PIN,PIN_MODE_OUTPUT);
-	rt_pin_write(QSDK_WAKEUP_IN_PIN,PIN_HIGH);
+	rt_pin_write(QSDK_WAKEUP_IN_PIN,nb_pin.wake_in_high);
 	rt_thread_delay(2000);
-	rt_pin_write(QSDK_PWRKEY_PIN,PIN_LOW);
+	rt_pin_write(QSDK_PWRKEY_PIN,nb_pin.pwr_low);
 #endif
 	rt_thread_delay(500);
-	rt_pin_write(QSDK_RESET_PIN,PIN_LOW);
+	rt_pin_write(QSDK_RESET_PIN,nb_pin.rst_low);
 
 	
 	return RT_EOK;
@@ -139,9 +167,9 @@ int nb_io_init(void)
 int nb_io_exit_psm(void)
 {
 #if	(defined QSDK_USING_M5311)||(defined QSDK_USING_ME3616)
-	rt_pin_write(QSDK_WAKEUP_IN_PIN,PIN_LOW);
+	rt_pin_write(QSDK_WAKEUP_IN_PIN,nb_pin.wake_in_low);
 	rt_thread_delay(200);
-	rt_pin_write(QSDK_WAKEUP_IN_PIN,PIN_HIGH);
+	rt_pin_write(QSDK_WAKEUP_IN_PIN,nb_pin.wake_in_high);
 	rt_thread_delay(500);
 #endif
 	return RT_EOK;
@@ -166,9 +194,9 @@ int qsdk_nb_reboot(void)
 	nb_device_table.reboot_type=NB_MODULE_NO_INIT;
 	nb_device_table.net_connect_ok=NB_MODULE_NO_INIT;
 	LOG_D("now nb-iot rebooting by pin");
-	rt_pin_write(QSDK_RESET_PIN,PIN_HIGH);
+	rt_pin_write(QSDK_RESET_PIN,nb_pin.rst_high);
 	rt_thread_delay(500);
-	rt_pin_write(QSDK_RESET_PIN,PIN_LOW);
+	rt_pin_write(QSDK_RESET_PIN,nb_pin.rst_low);
 	
 	if(rt_event_recv(nb_event,EVENT_REBOOT,RT_EVENT_FLAG_AND|RT_EVENT_FLAG_CLEAR,20000,&status)!=RT_EOK)
 	{
@@ -727,7 +755,7 @@ int qsdk_iot_set_address(void)
 		return RT_ERROR;
 	}
 	qsdk_iot_check_address();
-	rt_thread_delay(1500);
+	rt_thread_delay(2000);
 
 	if(qsdk_nb_reboot()==RT_EOK)	return RT_EOK;
 
@@ -1049,6 +1077,45 @@ int qsdk_init_environment(void)
 	struct serial_configure config = RT_SERIAL_CONFIG_DEFAULT; 
 	
 	LOG_I("\r\nWelcome to use QSDK. This SDK by longmain.\r\n Our official website is www.longmain.cn.\r\n\r\n");
+	
+	//set nb pin mode
+
+
+#ifdef QSDK_USING_PWRKEY
+	if(QSDK_PWRKEY_PIN_VALUE==PIN_HIGH)
+	{
+		nb_pin.pwr_high=PIN_HIGH;
+		nb_pin.pwr_low=PIN_LOW;
+	}
+	else
+	{
+		nb_pin.pwr_high=PIN_LOW;
+		nb_pin.pwr_low=PIN_HIGH;
+	}
+#endif
+	if(QSDK_RESET_PIN_VALUE==PIN_HIGH)
+	{
+		nb_pin.rst_high=PIN_HIGH;
+		nb_pin.rst_low=PIN_LOW;
+	}
+	else
+	{
+		nb_pin.rst_high=PIN_LOW;
+		nb_pin.rst_low=PIN_HIGH;
+	}
+#if	(defined QSDK_USING_M5311)||(defined QSDK_USING_ME3616)
+
+	if(QSDK_WAUP_IN_PIN_VALUE==PIN_HIGH)
+	{
+		nb_pin.wake_in_high=PIN_HIGH;
+		nb_pin.wake_in_low=PIN_LOW;
+	}
+	else
+	{
+		nb_pin.wake_in_high=PIN_LOW;
+		nb_pin.wake_in_low=PIN_HIGH;
+	}
+#endif
 	//set uart buad
 	uart_device=rt_device_find(QSDK_UART);
 
