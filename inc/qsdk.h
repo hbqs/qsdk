@@ -57,9 +57,10 @@ struct nb_device
 
 
 //qsdk_nb_fun
+void qsdk_nb_clear_environment(void);
 int qsdk_nb_quick_connect(void);
-int qsdk_nb_wait_connect(void);
 int qsdk_nb_reboot(void);
+int qsdk_nb_wait_connect(void);
 int qsdk_nb_sim_check(void);
 int qsdk_nb_set_psm_mode(char *tau_time,char *active_time);
 char *qsdk_nb_get_imsi(void);
@@ -70,16 +71,20 @@ int qsdk_nb_set_net_start(void);
 int qsdk_nb_get_net_connect(void);
 int qsdk_nb_get_net_connect_status(void);
 int qsdk_nb_get_reboot_event(void);
+void qsdk_nb_enter_psm(void);
+int qsdk_nb_exit_psm(void);
+int qsdk_nb_get_psm_status(void);
+int qsdk_nb_ping_ip(char *ip);
+
+#ifdef QSDK_USING_M5311
 int qsdk_nb_open_net_light(void);
 int qsdk_nb_close_net_light(void);
 int qsdk_nb_open_auto_psm(void);
 int qsdk_nb_close_auto_psm(void);
-void qsdk_nb_enter_psm(void);
-int qsdk_nb_exit_psm(void);
-int qsdk_nb_get_psm_status(void);
+#elif	(defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)
 char *qsdk_nb_query_ip(void);
-int qsdk_nb_ping_ip(char *ip);
-void qsdk_nb_clear_environment(void);
+#endif
+
 int string_to_hex(const char *pString, int len, char *pHex);
 void hexstring_to_string(char * pHex,int len, char * pString);
 
@@ -200,13 +205,13 @@ int qsdk_onenet_delete_object(qsdk_onenet_stream_t stream);
 int qsdk_onenet_open(void);
 int qsdk_onenet_close(void);
 int qsdk_onenet_update_time(int flge);
-int qsdk_onenet_notify(qsdk_onenet_stream_t stream,int len,qsdk_onenet_value_t data,int flge);
-int qsdk_onenet_read_rsp(int msgid,int result,qsdk_onenet_stream_t stream,int len,qsdk_onenet_value_t data,int index,int flge);
 int qsdk_onenet_quick_start(void);
+int qsdk_onenet_notify(qsdk_onenet_stream_t stream,int len,qsdk_onenet_value_t data,int flge);
 int qsdk_onenet_get_connect(void);
 int qsdk_onenet_get_object_read(qsdk_onenet_stream_t stream);
 int qsdk_onenet_get_object_write(qsdk_onenet_stream_t stream);
 int qsdk_onenet_get_object_exec(qsdk_onenet_stream_t stream);
+int qsdk_onenet_read_rsp(int msgid,int result,qsdk_onenet_stream_t stream,int len,qsdk_onenet_value_t data,int index,int flge);
 int qsdk_onenet_clear_environment(void);
 
 #if	(defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)
@@ -251,6 +256,7 @@ int qsdk_mqtt_get_connect(void);
 int qsdk_mqtt_get_error_type(void);
 #endif
 
+
 void qsdk_rtc_set_time_callback(int year,char month,char day,char hour,char min,char sec,char week);
 
 int qsdk_net_data_callback(char *data,int len);
@@ -262,8 +268,6 @@ int qsdk_onenet_read_rsp_callback(int msgid,int insid,int resid);
 int qsdk_onenet_write_rsp_callback(int len,char* value);
 int qsdk_onenet_exec_rsp_callback(int len,char* cmd);
 void qsdk_onenet_fota_callback(void);
-
-
 
 int qsdk_mqtt_data_callback(char *topic,char *mesg,int mesg_len);
 void qsdk_nb_reboot_callback(void);

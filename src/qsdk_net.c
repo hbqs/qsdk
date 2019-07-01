@@ -62,7 +62,7 @@ static struct net_stream  net_client_table[QSDK_NET_CLIENT_MAX]={0};
 *	
 *							server_port:服务器端口号
 *
-*	返回参数：	成功返回client地址  失败：RT_NULL
+*	返回参数：	成功:client地址  	失败：RT_NULL
 *
 *	说明：		
 *************************************************************/
@@ -130,7 +130,7 @@ __exit:
 /*************************************************************
 *	函数名称：	qsdk_net_connect_to_server
 *
-*	函数功能：	连接到服务器
+*	函数功能：	连接到TCP服务器
 *
 *	入口参数：	client: net客户端结构体
 *
@@ -315,7 +315,7 @@ int qsdk_net_get_client_revice(qsdk_net_client_t client)
 	return RT_ERROR;
 }
 /*************************************************************
-*	函数名称：	qsdk_net_get_client_revice
+*	函数名称：	qsdk_net_get_client_connect
 *
 *	函数功能：	查看客户端连接状态
 *
@@ -354,7 +354,7 @@ int qsdk_net_close_socket(qsdk_net_client_t client)
 /*************************************************************
 *	函数名称：	qsdk_net_clear_environment
 *
-*	函数功能：	清理net结构体环境
+*	函数功能：	清理net运行环境参数
 *
 *	入口参数：	无
 *

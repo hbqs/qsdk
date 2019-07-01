@@ -101,29 +101,15 @@ rt_event_t nb_event=RT_NULL;
 static struct nb_pin_mode nb_pin={0};
 struct nb_device nb_device_table={0};
 
+
 /*************************************************************
-*	函数名称：	qsdk_nb_clear_environment
-*
-*	函数功能：	清空NB模组当前状态
-*
-*	入口参数：	无
-*
-*	返回参数：	无
-*
-*	说明：		
-*************************************************************/
-void qsdk_nb_clear_environment(void)
-{
-	rt_memset(&nb_device_table,0,sizeof(nb_device_table));
-}
-/*************************************************************
-*	函数名称：	nb_hw_io_init
+*	函数名称：	nb_io_init
 *
 *	函数功能：	NB-IOT 模块控制引脚初始化
 *
 *	入口参数：	无
 *
-*	返回参数：	0 成功  1 失败
+*	返回参数：	0:成功  1:失败
 *
 *	说明：		
 *************************************************************/
@@ -154,13 +140,13 @@ int nb_io_init(void)
 }
 
 /*************************************************************
-*	函数名称：	qsdk_hw_io_exit_psm
+*	函数名称：	nb_io_exit_psm
 *
 *	函数功能：	NB-IOT 模块退出psm模式
 *
 *	入口参数：	无
 *
-*	返回参数：	0 成功  1 失败
+*	返回参数：	0:成功  1:失败
 *
 *	说明：		
 *************************************************************/
@@ -174,7 +160,21 @@ int nb_io_exit_psm(void)
 #endif
 	return RT_EOK;
 }
-
+/*************************************************************
+*	函数名称：	qsdk_nb_clear_environment
+*
+*	函数功能：	清空NB模组当前状态
+*
+*	入口参数：	无
+*
+*	返回参数：	无
+*
+*	说明：		
+*************************************************************/
+void qsdk_nb_clear_environment(void)
+{
+	rt_memset(&nb_device_table,0,sizeof(nb_device_table));
+}
 /*************************************************************
 *	函数名称：	qsdk_nb_reboot
 *
@@ -182,7 +182,7 @@ int nb_io_exit_psm(void)
 *
 *	入口参数：	无
 *
-*	返回参数：	0 成功  1 失败
+*	返回参数：	0:成功  1:失败
 *
 *	说明：		
 *************************************************************/
@@ -216,11 +216,11 @@ int qsdk_nb_reboot(void)
 /*************************************************************
 *	函数名称：	qsdk_nb_wait_connect
 *
-*	函数功能：	等待模块连接
+*	函数功能：	检测模块是否正常
 *
 *	入口参数：	无
 *
-*	返回参数：	0 成功   1 失败
+*	返回参数：	0:正常   1:模块异常
 *
 *	说明：		
 *************************************************************/
@@ -239,11 +239,11 @@ int qsdk_nb_wait_connect(void)
 /*************************************************************
 *	函数名称：	nb_sim_check
 *
-*	函数功能：	检测模块是否已经开机
+*	函数功能：	检测模块是否为正常模式
 *
 *	入口参数：	无
 *
-*	返回参数：	0 成功  1	失败
+*	返回参数：	0：成功   1：最小功能模式
 *
 *	说明：		
 *************************************************************/
@@ -254,7 +254,23 @@ int qsdk_nb_sim_check(void)
 
 	return  RT_EOK;
 }
+/*************************************************************
+*	函数名称：	nb_set_psm_mode
+*
+*	函数功能：	模块 PSM 模式设置
+*
+*	入口参数：	tau_time	TAU 时间		active_time active时间
+*
+*	返回参数：	0:成功  1:失败
+*
+*	说明：		
+*************************************************************/
+int qsdk_nb_set_psm_mode(char *tau_time,char *active_time)
+{
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+CPSMS=1,,,\"%s\",\"%s\"",tau_time,active_time)!=RT_EOK)	return RT_ERROR;	
 
+	return  RT_EOK;
+}
 /*************************************************************
 *	函数名称：	nb_get_imsi
 *
@@ -262,7 +278,7 @@ int qsdk_nb_sim_check(void)
 *
 *	入口参数：	无
 *
-*	返回参数：	IMSI指针 成功    RT_NULL	失败
+*	返回参数：	IMSI指针:成功    RT_NULL:失败
 *
 *	说明：		
 *************************************************************/
@@ -280,7 +296,7 @@ char *qsdk_nb_get_imsi(void)
 *
 *	入口参数：	无
 *
-*	返回参数：	IMEI指针 成功    RT_NULL	失败
+*	返回参数：	IMEI指针:成功    RT_NULL:失败
 *
 *	说明：		
 *************************************************************/
@@ -296,7 +312,7 @@ char *qsdk_nb_get_imei(void)
 *
 *	函数功能：	设置RTC时间为当前时间
 *
-*	入口参数：	year 年   month 月	day 日	hour 时	min 分	sec 秒
+*	入口参数：	year:年   month:月	day:日	hour:时	min:分	sec:秒
 *
 *	返回参数：	无
 *
@@ -330,9 +346,7 @@ static void qsdk_nb_set_rtc_time(int year,int month,int day,int hour,int min,int
    		}
    	}	
 		week=(day+2*month+3*(month+1)/5+year+year/4-year/100+year/400)%7+1;
-#ifdef QSDK_USING_M5311
-		hour-=8;
-#endif
+
 		LOG_D("当前时间:%d-%d-%d,%d-%d-%d,星期:%d\r\n",year+2000,month,day,hour,min,sec,week);
 		
 		qsdk_rtc_set_time_callback(year+2000,month,day,hour,min,sec,week);
@@ -345,7 +359,7 @@ static void qsdk_nb_set_rtc_time(int year,int month,int day,int hour,int min,int
 *
 *	入口参数：	无
 *
-*	返回参数：	0 成功  1	失败
+*	返回参数：	0:成功  1:失败
 *
 *	说明：		
 *************************************************************/
@@ -367,7 +381,7 @@ int qsdk_nb_get_time(void)
 *
 *	入口参数：	无
 *
-*	返回参数：	0-99 成功    -1	失败
+*	返回参数：	0-99:成功    -1:失败
 *
 *	说明：		
 *************************************************************/
@@ -386,7 +400,7 @@ int qsdk_nb_get_csq(void)
 *
 *	入口参数：	无
 *
-*	返回参数：	0 成功  1	失败
+*	返回参数：	0:成功  1:失败
 *
 *	说明：		
 *************************************************************/
@@ -403,7 +417,7 @@ int qsdk_nb_set_net_start(void)
 *
 *	入口参数：	无
 *
-*	返回参数：	0 成功  1	失败
+*	返回参数：	0:成功  1:失败
 *
 *	说明：		
 *************************************************************/
@@ -416,7 +430,7 @@ int qsdk_nb_get_net_connect(void)
 	}
 	at_resp_parse_line_args_by_kw(nb_resp,"+CEREG:","+CEREG:%d,%d",&i,&nb_device_table.net_connect_ok);
 
-	if(nb_device_table.net_connect_ok==1) 
+	if(nb_device_table.net_connect_ok==1||nb_device_table.net_connect_ok==5) 
 	{
 		return RT_EOK;
 	}
@@ -426,104 +440,44 @@ int qsdk_nb_get_net_connect(void)
 	}
 }
 /*************************************************************
-*	函数名称：	qsdk_nb_open_net_light
+*	函数名称：	qsdk_nb_get_net_connect_status
 *
-*	函数功能：	打开网络灯
-*
-*	入口参数：	无
-*
-*	返回参数：	0 成功    1失败
-*
-*	说明：		
-*************************************************************/
-int qsdk_nb_open_net_light(void)
-{
-#ifdef QSDK_USING_M5311
-	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+CMSYSCTRL=0,2")!=RT_EOK)	return RT_ERROR;
-#endif
-#ifdef QSDK_USING_ME3616
-	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+ZCONTLED=1")!=RT_EOK)	return RT_ERROR;
-#endif	
-	return  RT_EOK;
-}
-/*************************************************************
-*	函数名称：	qsdk_nb_close_net_light
-*
-*	函数功能：	关闭网络灯
+*	函数功能：	获取查询到的网络状态
 *
 *	入口参数：	无
 *
-*	返回参数：	0 成功    1失败
+*	返回参数：	0:成功  1:失败
 *
 *	说明：		
 *************************************************************/
-int qsdk_nb_close_net_light(void)
+int qsdk_nb_get_net_connect_status(void)
 {
-#ifdef QSDK_USING_M5311
-	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+CMSYSCTRL=0,0")!=RT_EOK)	return RT_ERROR;
-#endif
-#ifdef QSDK_USING_ME3616
-	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+ZCONTLED=0")!=RT_EOK)	return RT_ERROR;
-#endif	
-	return  RT_EOK;
-}
-/*************************************************************
-*	函数名称：	nb_set_psm_mode
-*
-*	函数功能：	模块 PSM 模式设置
-*
-*	入口参数：	tau_time	TAU 时间		active_time active时间
-*
-*	返回参数：	0 成功  1	失败
-*
-*	说明：		
-*************************************************************/
-int qsdk_nb_set_psm_mode(char *tau_time,char *active_time)
-{
-	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+CPSMS=1,,,\"%s\",\"%s\"",tau_time,active_time)!=RT_EOK)	return RT_ERROR;	
+	if(nb_device_table.net_connect_ok) return RT_EOK;
 
-	return  RT_EOK;
+	return RT_ERROR;
 }
 /*************************************************************
-*	函数名称：	qsdk_nb_open_auto_psm
+*	函数名称：	qsdk_nb_get_reboot_event
 *
-*	函数功能：	打开自动进入PSM模式功能
+*	函数功能：	获取nb-iot模块重启原因
 *
 *	入口参数：	无
 *
-*	返回参数：	0 成功    1失败
+*	返回参数：	1:引脚复位   2:AT复位		3:FOTA复位		4：异常复位
 *
 *	说明：		
 *************************************************************/
-int qsdk_nb_open_auto_psm(void)
+int qsdk_nb_get_reboot_event(void)
 {
-#ifdef QSDK_USING_M5311
-	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+SM=UNLOCK")!=RT_EOK)	return RT_ERROR;
-#endif	
-	return  RT_EOK;
-}
-/*************************************************************
-*	函数名称：	qsdk_nb_close_auto_psm
-*
-*	函数功能：	关闭自动进入PSM模式功能
-*
-*	入口参数：	无
-*
-*	返回参数：	0 成功    1失败
-*
-*	说明：		
-*************************************************************/
-int qsdk_nb_close_auto_psm(void)
-{
-#ifdef QSDK_USING_M5311
-	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+SM=LOCK")!=RT_EOK)	return RT_ERROR;
-#endif
-	return  RT_EOK;
+	if(nb_device_table.reboot_type==NB_MODULE_REBOOT_BY_PIN)		return 1;
+	else if(nb_device_table.reboot_type==NB_MODULE_REBOOT_BY_AT)		return 2;
+	else if(nb_device_table.reboot_type==NB_MODULE_REBOOT_BY_FOTA)	return 3;
+	else 		return 4;
 }
 /*************************************************************
 *	函数名称：	qsdk_nb_enter_psm
 *
-*	函数功能：	关闭自动进入PSM模式功能
+*	函数功能：	nb-iot模块进入PSM模式
 *
 *	入口参数：	无
 *
@@ -561,33 +515,15 @@ void qsdk_nb_enter_psm(void)
 	LOG_D("nb-iot exit psm\r\n");
 #endif
 }
-/*************************************************************
-*	函数名称：	qsdk_nb_get_psm_status
-*
-*	函数功能：	查询nb-iot模块是否进入psm 模式
-*
-*	入口参数：	无
-*
-*	返回参数：	0：当前在psm模式      1：当前未进入psm模式
-*
-*	说明：		
-*************************************************************/
-int qsdk_nb_get_psm_status(void)
-{
-	if(nb_device_table.psm_status!=qsdk_nb_status_enter_psm)
-	{
-		return	RT_ERROR;
-	}
-	return  RT_EOK;
-}
+
 /*************************************************************
 *	函数名称：	qsdk_nb_exit_psm
 *
-*	函数功能：	关闭自动进入PSM模式功能
+*	函数功能：	nb-iot模块退出PSM模式
 *
 *	入口参数：	无
 *
-*	返回参数：	0 成功    1失败
+*	返回参数：	0:成功    1:失败
 *
 *	说明：		
 *************************************************************/
@@ -611,56 +547,24 @@ int qsdk_nb_exit_psm(void)
 	return  RT_EOK;
 }
 /*************************************************************
-*	函数名称：	qsdk_nb_get_net_connect_status
+*	函数名称：	qsdk_nb_get_psm_status
 *
-*	函数功能：	获取查询到的网络状态
-*
-*	入口参数：	无
-*
-*	返回参数：	0 成功  1	失败
-*
-*	说明：		
-*************************************************************/
-int qsdk_nb_get_net_connect_status(void)
-{
-	if(nb_device_table.net_connect_ok) return RT_EOK;
-
-	return RT_ERROR;
-}
-/*************************************************************
-*	函数名称：	qsdk_nb_get_reboot_event
-*
-*	函数功能：	获取nb-iot模块重启原因
+*	函数功能：	查询nb-iot模块是否进入psm 模式
 *
 *	入口参数：	无
 *
-*	返回参数：	无
+*	返回参数：	0：当前在psm模式      1：当前未进入psm模式
 *
 *	说明：		
 *************************************************************/
-int qsdk_nb_get_reboot_event(void)
+int qsdk_nb_get_psm_status(void)
 {
-	return nb_device_table.reboot_type;
+	if(nb_device_table.psm_status!=qsdk_nb_status_enter_psm)
+	{
+		return	RT_ERROR;
+	}
+	return  RT_EOK;
 }
-/*************************************************************
-*	函数名称：	nb_query_ip
-*
-*	函数功能：	查询模块在核心网的IP地址
-*
-*	入口参数：	无
-*
-*	返回参数：	0 成功  1	失败
-*
-*	说明：		
-*************************************************************/
-char *qsdk_nb_query_ip(void)
-{
-	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+CGPADDR")!=RT_EOK) return RT_NULL;
-	
-	at_resp_parse_line_args(nb_resp,2,"+CGPADDR:0,%s",nb_device_table.ip);
-	return nb_device_table.ip;
-}
-
 /*************************************************************
 *	函数名称：	qsdk_nb_ping_ip
 *
@@ -668,7 +572,7 @@ char *qsdk_nb_query_ip(void)
 *
 *	入口参数：	IP：需要ping 的IP地址
 *
-*	返回参数：	0 成功  1	失败
+*	返回参数：	0:成功  1:失败
 *
 *	说明：		
 *************************************************************/
@@ -691,7 +595,106 @@ int qsdk_nb_ping_ip(char *ip)
 	return RT_ERROR;
 }
 
-#if	(defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)
+#ifdef QSDK_USING_M5311
+/*************************************************************
+*	函数名称：	qsdk_nb_open_net_light
+*
+*	函数功能：	打开网络指示灯
+*
+*	入口参数：	无
+*
+*	返回参数：	0:成功    1:失败
+*
+*	说明：		
+*************************************************************/
+int qsdk_nb_open_net_light(void)
+{
+#ifdef QSDK_USING_M5311
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+CMSYSCTRL=0,2")!=RT_EOK)	return RT_ERROR;
+#endif
+#ifdef QSDK_USING_ME3616
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+ZCONTLED=1")!=RT_EOK)	return RT_ERROR;
+#endif	
+	return  RT_EOK;
+}
+/*************************************************************
+*	函数名称：	qsdk_nb_close_net_light
+*
+*	函数功能：	关闭网络指示灯
+*
+*	入口参数：	无
+*
+*	返回参数：	0:成功    1:失败
+*
+*	说明：		
+*************************************************************/
+int qsdk_nb_close_net_light(void)
+{
+#ifdef QSDK_USING_M5311
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+CMSYSCTRL=0,0")!=RT_EOK)	return RT_ERROR;
+#endif
+#ifdef QSDK_USING_ME3616
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+ZCONTLED=0")!=RT_EOK)	return RT_ERROR;
+#endif	
+	return  RT_EOK;
+}
+
+/*************************************************************
+*	函数名称：	qsdk_nb_open_auto_psm
+*
+*	函数功能：	模块启用自动进入PSM模式功能
+*
+*	入口参数：	无
+*
+*	返回参数：	0:成功    1:失败
+*
+*	说明：		
+*************************************************************/
+int qsdk_nb_open_auto_psm(void)
+{
+#ifdef QSDK_USING_M5311
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+SM=UNLOCK")!=RT_EOK)	return RT_ERROR;
+#endif	
+	return  RT_EOK;
+}
+/*************************************************************
+*	函数名称：	qsdk_nb_close_auto_psm
+*
+*	函数功能：	模块关闭自动进入PSM模式功能
+*
+*	入口参数：	无
+*
+*	返回参数：	0:成功    1:失败
+*
+*	说明：		
+*************************************************************/
+int qsdk_nb_close_auto_psm(void)
+{
+#ifdef QSDK_USING_M5311
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+SM=LOCK")!=RT_EOK)	return RT_ERROR;
+#endif
+	return  RT_EOK;
+}
+
+#elif		(defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)
+/*************************************************************
+*	函数名称：	nb_query_ip
+*
+*	函数功能：	查询模块在核心网的IP地址
+*
+*	入口参数：	无
+*
+*	返回参数：	IP: 成功  	RT_NULL:失败
+*
+*	说明：		
+*************************************************************/
+char *qsdk_nb_query_ip(void)
+{
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+CGPADDR")!=RT_EOK) return RT_NULL;
+	
+	at_resp_parse_line_args(nb_resp,2,"+CGPADDR:0,%s",nb_device_table.ip);
+	return nb_device_table.ip;
+}
 /*************************************************************
 *	函数名称：	qsdk_iot_check_address
 *
@@ -699,7 +702,7 @@ int qsdk_nb_ping_ip(char *ip)
 *
 *	入口参数：	无
 *
-*	返回参数：	0 正确  1	失败
+*	返回参数：	0:正确  1:失败
 *
 *	说明：		
 *************************************************************/
@@ -728,7 +731,7 @@ int qsdk_iot_check_address(void)
 *
 *	入口参数：	无
 *
-*	返回参数：	0 成功  1	失败
+*	返回参数：	0:成功  1:失败
 *
 *	说明：		
 *************************************************************/
@@ -767,9 +770,9 @@ int qsdk_iot_set_address(void)
 *
 *	函数功能：	字符串转hex
 *
-*	入口参数：	无
+*	入口参数：	*pString:待转换字符串  len:待转换字符串长度   *pHex:转换后的HEX字符串
 *
-*	返回参数：	0 成功  1	失败
+*	返回参数：	0:成功  1:失败
 *
 *	说明：		
 *************************************************************/
@@ -836,12 +839,12 @@ void nb_reboot_func(char *data)
 	{
 		if(nb_device_table.reboot_open==NB_MODULE_REBOOT_FOR_PIN)
 		{
-			nb_device_table.reboot_type=NB_MODULE_REBOOT_BY_PIN;
 			rt_event_send(nb_event,EVENT_REBOOT);
 		}			
 		else 
 		{
 			LOG_E("%s\r\n reboot by pin\r\n",data);
+			nb_device_table.reboot_type=NB_MODULE_REBOOT_BY_PIN;
 			qsdk_nb_reboot_callback();
 		}
 	}
@@ -849,12 +852,12 @@ void nb_reboot_func(char *data)
 	{	
 		if(nb_device_table.reboot_open==NB_MODULE_REBOOT_FOR_AT)
 		{
-			nb_device_table.reboot_type=NB_MODULE_REBOOT_BY_AT;	
 			rt_event_send(nb_event,EVENT_REBOOT);
 		}
 		else 
 		{
 			LOG_E("%s\r\n reboot by at\r\n",data);
+			nb_device_table.reboot_type=NB_MODULE_REBOOT_BY_AT;	
 			qsdk_nb_reboot_callback();
 		}
 	}

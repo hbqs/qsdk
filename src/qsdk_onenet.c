@@ -244,7 +244,7 @@ __exit:
 *
 * 入口参数： 无
 *
-* 返回值： 0 成功  1失败
+* 返回值：	 0：成功   1：失败
 *
 ********************************************************/
 int qsdk_onenet_delete_instance(void)
@@ -278,7 +278,7 @@ static int onenet_create_object(void)
 {
 	int i=0,j=0,status=1;
 	int str[QSDK_ONENET_OBJECT_MAX_NUM];
-
+	onenet_device_table.objcount=0;
 	//循环添加 object
 	for(;i<onenet_device_table.dev_len;i++)
 	{			
@@ -326,9 +326,9 @@ static int onenet_create_object(void)
 *
 *	函数功能： 删除模组内已注册 object 数据流
 *
-* 入口参数： object : object编号
+* 入口参数： stream : object编号
 *
-* 返回值： 0 成功  1失败
+* 返回值： 0：成功   1：失败
 *
 ********************************************************/
 int qsdk_onenet_delete_object(qsdk_onenet_stream_t stream)
@@ -364,399 +364,7 @@ int qsdk_onenet_delete_object(qsdk_onenet_stream_t stream)
 	}
 	return RT_ERROR;
 }
-
-/****************************************************
-* 函数名称： onenet_open
-*
-* 函数作用： 设备登录到 onenet 平台
-*
-* 入口参数： 无
-*
-* 返回值： 0 成功 	1失败
-*****************************************************/
-int qsdk_onenet_open(void)
-{
-	rt_uint32_t status;
-	onenet_device_table.lifetime=QSDK_ONENET_LIFE_TIME;
-	LOG_D("AT+MIPLOPEN=%d,%d\r\n",onenet_device_table.instance,onenet_device_table.lifetime);
-	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLOPEN=%d,%d",onenet_device_table.instance,onenet_device_table.lifetime)!=RT_EOK) 
-	{
-		LOG_E("onener open failure\r\n");
-		return RT_ERROR;
-	}
-#ifdef QSDK_USING_DEBUG
-	LOG_D("onenet open success\r\n");
-#endif
-	onenet_device_table.initstep=4;
-	onenet_device_table.event_status=qsdk_onenet_status_init;	
-	if(rt_event_recv(nb_event,event_bootstrap_fail|event_connect_fail|event_reg_fail|event_reg_success|event_reg_timeout,RT_EVENT_FLAG_OR|RT_EVENT_FLAG_CLEAR,90000,&status)!=RT_EOK)
-	{
-		LOG_E("onenet wait reg timeout\r\n");
-		return RT_ERROR;
-	}
-	if(status==event_bootstrap_fail|status==event_connect_fail|status==event_reg_fail) 
-	{
-		LOG_E("onenet reg failure\r\n");
-		return RT_ERROR;
-	}
-	if(status==event_reg_timeout) 
-	{
-		LOG_E("onenet 平台登陆超时，设备未在平台注册或者在平台填写了Auth_Code，需要清空 Auth_Code 信息");
-		return RT_ERROR;
-	}
-
-#ifdef QSDK_USING_DEBUG
-		LOG_D("onenet reg success\r\n");
-#endif
-		onenet_device_table.initstep=5;
-	if(rt_event_recv(nb_event,event_observer_run|event_observer_success,RT_EVENT_FLAG_AND|RT_EVENT_FLAG_CLEAR,30000,&status)!=RT_EOK)
-	{
-		LOG_E("wait onenet observe event timeout\r\n");
-		return RT_ERROR;
-	}
-#ifdef QSDK_USING_DEBUG
-		LOG_D("onenet observe success\r\n");
-#endif
-	onenet_device_table.initstep=6;
-	if(rt_event_recv(nb_event,event_discover_run|event_discover_success,RT_EVENT_FLAG_AND|RT_EVENT_FLAG_CLEAR,30000,&status)!=RT_EOK)
-	{
-		LOG_E("wait onenet observe event timeout\r\n");
-		return RT_ERROR;
-	}
-	if(onenet_device_table.discover_status==qsdk_onenet_status_success)						//判断	discover 是否初始化成功
-	{
-		LOG_D("onenet lwm2m connect success\r\n");
-		onenet_device_table.initstep=13;
-		return RT_EOK;
-	}
-	else 
-	{
-		LOG_E("discover failure\r\n");	
-		return RT_ERROR;
-	}	
-}
-/****************************************************
-* 函数名称： qsdk_onenet_close
-*
-* 函数作用： 在onenet 平台注销设备
-*
-* 入口参数： 无
-*
-* 返回值： 0 成功	1失败
-*****************************************************/
-int qsdk_onenet_close(void)
-{
-	rt_uint32_t status;
-	onenet_device_table.close_status=qsdk_onenet_status_close_start;
-	LOG_D("AT+MIPLCLOSE=%d\r\n",onenet_device_table.instance);
-	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLCLOSE=%d",onenet_device_table.instance)!=RT_EOK)
-	{
-		LOG_E("close onenet instance failure\r\n");
-		return RT_ERROR;
-	}
-	//等待平台返回EVENT：15事件
-	if(rt_event_recv(nb_event,event_unreg_done,RT_EVENT_FLAG_AND|RT_EVENT_FLAG_CLEAR,20000,&status)!=RT_EOK)
-	{
-		LOG_E("close onenet instance failure\r\n");
-		return RT_ERROR;
-	}
-#ifdef QSDK_USING_DEBUG
-	LOG_D("close onenet instance success\r\n");
-#endif
-	onenet_device_table.connect_status=qsdk_onenet_status_init;
-	return RT_EOK;
-}
-/****************************************************
-* 函数名称： qsdk_onenet_update_time
-*
-* 函数作用： 更新onenet 设备维持时间
-*
-* 入口参数： flge :是否同时更新云端object 信息
-*
-* 返回值： 0 成功	1失败
-*****************************************************/
-int qsdk_onenet_update_time(int flge)
-{
-	rt_uint32_t status;
-	//向平台发送更新命令
-	onenet_device_table.update_time=qsdk_onenet_status_update_init;
-	LOG_D("AT+MIPLUPDATE=%d,%d,%d\r\n",onenet_device_table.instance,onenet_device_table.lifetime,flge);
-	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLUPDATE=%d,%d,%d",onenet_device_table.instance,onenet_device_table.lifetime,flge)!=RT_EOK)
-	{
-		return  RT_ERROR;
-	}
-	//等待平台返回event事件
-	if(rt_event_recv(nb_event,event_lifetime_timeout|event_update_fail|event_update_timeout|event_update_success,RT_EVENT_FLAG_OR|RT_EVENT_FLAG_CLEAR,20000,&status)!=RT_EOK)
-	{
-		goto __exit;
-	}
-	//判断是否更新成功
-	if(status==event_lifetime_timeout|status==event_update_fail|status==event_update_timeout)
-	{
-		goto __exit;
-	}
-#ifdef QSDK_USING_DEBUG
-	LOG_D("onenet update time success\r\n");
-#endif
-	return RT_EOK;
-	
-__exit:
-	LOG_E("onenet update time failure\r\n");
-	return  RT_ERROR;
-}
-/****************************************************
-* 函数名称： qsdk_onenet_read_rsp
-*
-* 函数作用： onenet read 响应
-*
-* 入口参数： msgid：消息ID		
-*
-*						 result：读写状态
-*	
-*						 stream：object 结构体
-*
-*						 len：上报的消息长度
-*
-*						 data：上报的消息值			
-*
-*						 index：指令序列号
-*
-*						 flge: 消息标识
-*
-* 返回值： 0 成功	1失败
-*****************************************************/
-int qsdk_onenet_read_rsp(int msgid,int result,qsdk_onenet_stream_t stream,int len,qsdk_onenet_value_t data,int index,int flge)
-{
-		//返回 onenet read 响应
-		if(stream->valuetype==qsdk_onenet_value_string||stream->valuetype==qsdk_onenet_value_opaque||stream->valuetype==qsdk_onenet_value_hexStr)
-		{
-			LOG_D("AT+MIPLREADRSP=%d,%d,%d,%d,%d,%d,%d,%d,\"%s\",%d,%d\r\n",onenet_device_table.instance,msgid,result,stream->objid,\
-								 stream->insid,stream->resid,stream->valuetype,len,data->string_value,index,flge);
-		
-			if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLREADRSP=%d,%d,%d,%d,%d,%d,%d,%d,\"%s\",%d,%d",onenet_device_table.instance,msgid,result,stream->objid,\
-								 stream->insid,stream->resid,stream->valuetype,len,data->string_value,index,flge)!=RT_EOK) 
-			{
-				return RT_ERROR;
-			}
-		}
-		else if(stream->valuetype==qsdk_onenet_value_integer)
-		{
-			LOG_D("AT+MIPLREADRSP=%d,%d,%d,%d,%d,%d,%d,1,\"%d\",%d,%d\r\n",onenet_device_table.instance,msgid,result,stream->objid,\
-								 stream->insid,stream->resid,stream->valuetype,data->int_value,index,flge);			
-		
-			if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLREADRSP=%d,%d,%d,%d,%d,%d,%d,1,\"%d\",%d,%d",onenet_device_table.instance,msgid,result,stream->objid,\
-								 stream->insid,stream->resid,stream->valuetype,data->int_value,index,flge)!=RT_EOK) 
-			{
-				return RT_ERROR;
-			}
-		}
-		else if(stream->valuetype==qsdk_onenet_value_float)
-		{
-			LOG_D("AT+MIPLREADRSP=%d,%d,%d,%d,%d,%d,%d,1,\"%f\",%d,%d\r\n",onenet_device_table.instance,msgid,result,stream->objid,\
-								 stream->insid,stream->resid,stream->valuetype,data->float_value,index,flge);
-		
-			if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLREADRSP=%d,%d,%d,%d,%d,%d,%d,1,\"%f\",%d,%d",onenet_device_table.instance,msgid,result,stream->objid,\
-								 stream->insid,stream->resid,stream->valuetype,data->float_value,index,flge)!=RT_EOK)  
-			{
-				return RT_ERROR;
-			}
-		}
-		else if(stream->valuetype==qsdk_onenet_value_bool)
-		{
-			LOG_D("AT+MIPLREADRSP=%d,%d,%d,%d,%d,%d,%d,1,\"%d\",%d,%d\r\n",onenet_device_table.instance,msgid,result,stream->objid,\
-								 stream->insid,stream->resid,stream->valuetype,data->bool_value,index,flge);
-			
-			if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLREADRSP=%d,%d,%d,%d,%d,%d,%d,1,\"%d\",%d,%d",onenet_device_table.instance,msgid,result,stream->objid,\
-								 stream->insid,stream->resid,stream->valuetype,data->bool_value,index,flge)!=RT_EOK) 
-			{
-				return RT_ERROR;
-			}
-		}
-		stream->read_status=0;
-		return RT_EOK;
-}
-
-/****************************************************
-* 函数名称： onenet_read_rsp
-*
-* 函数作用： onenet read 响应
-*
-* 入口参数： msgid	消息ID			
-*	
-*							objid	即将操作的objectid
-*
-*							insid	即将操作的 instanceid
-*
-*							resid 即将操作的 instanceid							
-*
-* 返回值： 0 成功	1失败
-*****************************************************/
-static int onenet_read_rsp(int msgid,int objid,int insid,int resid)
-{
-	int i=0;
-	
-	if(insid == -1&&resid == -1)
-	{
-		//循环检测objectid
-		for(;i<onenet_device_table.dev_len;i++)
-		{
-			//判断当前objectid 是否为即将要读的信息
-			if(onenet_stream_table[i].objid==objid)
-			{
-				onenet_stream_table[i].read_status=10;
-			}
-		}
-	}
-	else if(resid == -1)
-	{
-		//循环检测objectid
-		for(;i<onenet_device_table.dev_len;i++)
-		{
-			//判断当前objectid 是否为即将要读的信息
-			if(onenet_stream_table[i].objid==objid&&onenet_stream_table[i].insid==insid)
-			{
-				onenet_stream_table[i].read_status=10;
-			}
-		}
-	}
-	else
-	{
-		//循环检测objectid
-		for(;i<onenet_device_table.dev_len;i++)
-		{
-			//判断当前objectid 是否为即将要读的信息
-			if(onenet_stream_table[i].objid==objid&&onenet_stream_table[i].insid==insid&&onenet_stream_table[i].resid==resid)
-			{
-				onenet_stream_table[i].read_status=10;
-			}
-		}
-	}
-
-	//进入读回调函数
-		if(qsdk_onenet_read_rsp_callback(msgid,insid,resid)==RT_EOK)
-		{
-#ifdef QSDK_USING_DEBUG
-			LOG_D("onenet read rsp success\r\n");
-#endif
-			return RT_EOK;
-		}
-	// read 回调函数处理失败操作
-		LOG_E("onenet read rsp failure\r\n");
-		return  RT_ERROR;
-}
-/****************************************************
-* 函数名称： onenet_write_rsp
-*
-* 函数作用： onenet write 响应
-*
-* 入口参数： msgid：消息ID			
-*	
-*						 objid：即将操作的objectid
-*
-*						 insid：即将操作的 instanceid
-*
-*						 resid：即将操作的 instanceid		
-*
-*						 valuetype：write值类型	
-*
-*						 len：write值长度	
-*
-*						 value：write值	
-*
-* 返回值： 0 成功	1失败
-*****************************************************/
-static int onenet_write_rsp(int msgid,int objid,int insid,int resid,int valuetype,int len,char* value)
-{
-	int i=0,result=qsdk_onenet_status_result_Not_Found;;
-		//循环检测objectid
-	for(;i<onenet_device_table.dev_len;i++)
-	{
-		//判断当前objectid 是否为即将要读的信息
-		if(onenet_stream_table[i].objid==objid&&onenet_stream_table[i].insid==insid&&onenet_stream_table[i].resid==resid)
-		{
-			onenet_stream_table[i].write_status=10;
-			//进入 write 回调函数
-			if(qsdk_onenet_write_rsp_callback(len,value)==RT_EOK)
-			{
-				result=qsdk_onenet_status_result_write_success;
-#ifdef QSDK_USING_DEBUG
-				LOG_D("onenet write rsp success\r\n");
-#endif
-			}
-			else	//write回调函数处理失败操作
-			{
-				result=qsdk_onenet_status_result_Bad_Request;
-				LOG_E("onenet write rsp failure\r\n");
-			}
-			onenet_stream_table[i].write_status=0;
-			LOG_D("AT+MIPLWRITERSP=%d,%d,%d\r\n",onenet_device_table.instance,msgid,result);
-			if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLWRITERSP=%d,%d,%d",onenet_device_table.instance,msgid,result)!=RT_EOK) return RT_ERROR;
-			return RT_EOK;
-		}
-	}
-	//当前 objectid 不在列表中
-		return RT_ERROR;	
-}
-/****************************************************
-* 函数名称： onenet_execute_rsp
-*
-* 函数作用： onenet execute 响应
-*
-* 入口参数： msgid	消息ID			
-*	
-*							objid：即将操作的objectid
-*
-*							insid：即将操作的 instanceid
-*
-*							resid：即将操作的 instanceid		
-*
-*							len：cmd值长度	
-*
-*							cmd：本次cmd值	
-*
-* 返回值： 0 成功	1失败
-*****************************************************/
-static int onenet_execute_rsp(int msgid,int objid,int insid,int resid,int len,char *cmd)
-{
-	int i=0,result=qsdk_onenet_status_result_Not_Found;
-	
-	for(;i<onenet_device_table.dev_len;i++)
-	{
-		//判断当前objectid 是否为即将要读的信息
-		if(onenet_stream_table[i].objid==objid&&onenet_stream_table[i].insid==insid&&onenet_stream_table[i].resid==resid)
-		{
-			onenet_stream_table[i].exec_status=10;
-			//进入 execute 回调函数
-			if(qsdk_onenet_exec_rsp_callback(len,cmd)==RT_EOK)
-			{
-				result=qsdk_onenet_status_result_write_success;
-#ifdef QSDK_USING_DEBUG
-				LOG_D("onenet execute rsp success\r\n");
-#endif
-			}
-			else	//execute回调函数处理失败操作
-			{
-				result=qsdk_onenet_status_result_Bad_Request;
-				LOG_E("onenet execute rsp failure\r\n");
-			}
-			onenet_stream_table[i].exec_status=0;
-			LOG_D("AT+MIPLEXECUTERSP=%d,%d,%d\r\n",onenet_device_table.instance,msgid,result);
-			if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLEXECUTERSP=%d,%d,%d",onenet_device_table.instance,msgid,result)!=RT_EOK) return RT_ERROR;	
-			
-			return RT_EOK;	
-		}
-	}
-	//返回 object 不在列表中
-	return RT_ERROR;
-}
-
-int qsdk_rsp_onenet_parameter(int instance,int msgid,int result)
-{
-
-
-		return 0;
-}
-
+#if	(defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)||	(defined QSDK_USING_M5311)
 static int onenet_discover_rsp(void)
 {
 	char *resourcemap=RT_NULL;
@@ -862,6 +470,161 @@ static int onenet_discover_rsp(void)
 	rt_free(resourcemap);
 	return RT_EOK;
 }
+#endif
+/****************************************************
+* 函数名称： qsdk_onenet_open
+*
+* 函数作用： 设备登录到 onenet 平台
+*
+* 入口参数： 无
+*
+* 返回值： 0：成功   1：失败
+*****************************************************/
+int qsdk_onenet_open(void)
+{
+	rt_uint32_t status;
+	onenet_device_table.lifetime=QSDK_ONENET_LIFE_TIME;
+		if(onenet_create_object()!=RT_EOK)							//创建 object
+	{
+		LOG_E("onenet add objece failure\r\n");
+		return RT_ERROR;
+	}
+	onenet_device_table.initstep=2;
+#if	(defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)||	(defined QSDK_USING_M5311)
+	if(onenet_discover_rsp()!=RT_EOK)						// notify 设备参数到模组
+	{
+		LOG_E("onenet add discover failure\r\n");
+		return RT_ERROR;
+	}
+	onenet_device_table.initstep=3;
+#endif
+	LOG_D("AT+MIPLOPEN=%d,%d\r\n",onenet_device_table.instance,onenet_device_table.lifetime);
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLOPEN=%d,%d",onenet_device_table.instance,onenet_device_table.lifetime)!=RT_EOK) 
+	{
+		LOG_E("onener open failure\r\n");
+		return RT_ERROR;
+	}
+#ifdef QSDK_USING_DEBUG
+	LOG_D("onenet open success\r\n");
+#endif
+	onenet_device_table.initstep=4;
+	onenet_device_table.event_status=qsdk_onenet_status_init;	
+	if(rt_event_recv(nb_event,event_bootstrap_fail|event_connect_fail|event_reg_fail|event_reg_success|event_reg_timeout,RT_EVENT_FLAG_OR|RT_EVENT_FLAG_CLEAR,90000,&status)!=RT_EOK)
+	{
+		LOG_E("onenet wait reg timeout\r\n");
+		return RT_ERROR;
+	}
+	if(status==event_bootstrap_fail|status==event_connect_fail|status==event_reg_fail) 
+	{
+		LOG_E("onenet reg failure\r\n");
+		return RT_ERROR;
+	}
+	if(status==event_reg_timeout) 
+	{
+		LOG_E("onenet 平台登陆超时，设备未在平台注册或者在平台填写了Auth_Code，需要清空 Auth_Code 信息");
+		return RT_ERROR;
+	}
+
+#ifdef QSDK_USING_DEBUG
+		LOG_D("onenet reg success\r\n");
+#endif
+		onenet_device_table.initstep=5;
+	if(rt_event_recv(nb_event,event_observer_run|event_observer_success,RT_EVENT_FLAG_AND|RT_EVENT_FLAG_CLEAR,30000,&status)!=RT_EOK)
+	{
+		LOG_E("wait onenet observe event timeout\r\n");
+		return RT_ERROR;
+	}
+#ifdef QSDK_USING_DEBUG
+		LOG_D("onenet observe success\r\n");
+#endif
+	onenet_device_table.initstep=6;
+	if(rt_event_recv(nb_event,event_discover_run|event_discover_success,RT_EVENT_FLAG_AND|RT_EVENT_FLAG_CLEAR,30000,&status)!=RT_EOK)
+	{
+		LOG_E("wait onenet observe event timeout\r\n");
+		return RT_ERROR;
+	}
+	if(onenet_device_table.discover_status==qsdk_onenet_status_success)						//判断	discover 是否初始化成功
+	{
+		LOG_D("onenet lwm2m connect success\r\n");
+		onenet_device_table.initstep=13;
+		return RT_EOK;
+	}
+	else 
+	{
+		LOG_E("discover failure\r\n");	
+		return RT_ERROR;
+	}	
+}
+/****************************************************
+* 函数名称： qsdk_onenet_close
+*
+* 函数作用： 在onenet 平台注销设备
+*
+* 入口参数： 无
+*
+* 返回值： 0：成功   1：失败
+*****************************************************/
+int qsdk_onenet_close(void)
+{
+	rt_uint32_t status;
+	onenet_device_table.close_status=qsdk_onenet_status_close_start;
+	LOG_D("AT+MIPLCLOSE=%d\r\n",onenet_device_table.instance);
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLCLOSE=%d",onenet_device_table.instance)!=RT_EOK)
+	{
+		LOG_E("close onenet instance failure\r\n");
+		return RT_ERROR;
+	}
+	//等待平台返回EVENT：15事件
+	if(rt_event_recv(nb_event,event_unreg_done,RT_EVENT_FLAG_AND|RT_EVENT_FLAG_CLEAR,20000,&status)!=RT_EOK)
+	{
+		LOG_E("close onenet instance failure\r\n");
+		return RT_ERROR;
+	}
+#ifdef QSDK_USING_DEBUG
+	LOG_D("close onenet instance success\r\n");
+#endif
+	onenet_device_table.connect_status=qsdk_onenet_status_init;
+	return RT_EOK;
+}
+/****************************************************
+* 函数名称： qsdk_onenet_update_time
+*
+* 函数作用： 更新onenet 设备维持时间
+*
+* 入口参数： flge :是否同时更新云端object 信息
+*
+* 返回值： 0：成功   1：失败
+*****************************************************/
+int qsdk_onenet_update_time(int flge)
+{
+	rt_uint32_t status;
+	//向平台发送更新命令
+	onenet_device_table.update_time=qsdk_onenet_status_update_init;
+	LOG_D("AT+MIPLUPDATE=%d,%d,%d\r\n",onenet_device_table.instance,onenet_device_table.lifetime,flge);
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLUPDATE=%d,%d,%d",onenet_device_table.instance,onenet_device_table.lifetime,flge)!=RT_EOK)
+	{
+		return  RT_ERROR;
+	}
+	//等待平台返回event事件
+	if(rt_event_recv(nb_event,event_lifetime_timeout|event_update_fail|event_update_timeout|event_update_success,RT_EVENT_FLAG_OR|RT_EVENT_FLAG_CLEAR,20000,&status)!=RT_EOK)
+	{
+		goto __exit;
+	}
+	//判断是否更新成功
+	if(status==event_lifetime_timeout|status==event_update_fail|status==event_update_timeout)
+	{
+		goto __exit;
+	}
+#ifdef QSDK_USING_DEBUG
+	LOG_D("onenet update time success\r\n");
+#endif
+	return RT_EOK;
+	
+__exit:
+	LOG_E("onenet update time failure\r\n");
+	return  RT_ERROR;
+}
+
 /*************************************************************
 *	函数名称：	qsdk_onenet_quick_start
 *
@@ -869,7 +632,7 @@ static int onenet_discover_rsp(void)
 *
 *	入口参数：	无
 *
-*	返回参数：	0 成功		1  失败
+*	返回参数：	0：成功   1：失败
 *
 *	说明：		
 ************************************************************/	
@@ -881,20 +644,7 @@ int qsdk_onenet_quick_start(void)
 		goto failure;
 	}
 	onenet_device_table.initstep=1;
-	if(onenet_create_object()!=RT_EOK)							//创建 object
-	{
-		LOG_E("onenet add objece failure\r\n");
-		goto failure;
-	}
-	onenet_device_table.initstep=2;
-#if	(defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)||	(defined QSDK_USING_M5311)
-	if(onenet_discover_rsp()!=RT_EOK)						// notify 设备参数到模组
-	{
-		LOG_E("onenet add discover failure\r\n");
-		goto failure;
-	}
-	onenet_device_table.initstep=3;
-#endif
+
 	if(qsdk_onenet_open()!=RT_EOK)	goto failure;							// 执行 onenet 登录函数
 
 	return RT_EOK;
@@ -911,68 +661,6 @@ int qsdk_onenet_quick_start(void)
 		qsdk_onenet_close();		
 	}								
 	return RT_ERROR;	
-}
-/****************************************************
-* 函数名称： qsdk_onenet_get_connect
-*
-* 函数作用： 获取onenet 平台连接状态
-*
-* 入口参数： 无
-*
-* 返回值： 0 连接成功	1 连接已断开
-*****************************************************/
-int qsdk_onenet_get_connect(void)
-{
-	if(onenet_device_table.connect_status==qsdk_onenet_status_success)
-		return RT_EOK;
-
-		return RT_ERROR;
-}
-/****************************************************
-* 函数名称： qsdk_onenet_get_object_read
-*
-* 函数作用： 查询当前object 是否收到平台read消息
-*
-* 入口参数： object：object分组	
-*
-* 返回值： 0 收到	1 没收到
-*****************************************************/
-int qsdk_onenet_get_object_read(qsdk_onenet_stream_t stream)
-{
-	if(stream->read_status==10)	return RT_EOK;
-		
-	return RT_ERROR;
-}
-
-/****************************************************
-* 函数名称： qsdk_onenet_get_object_write
-*
-* 函数作用： 查询当前object 是否收到平台write消息
-*
-* 入口参数： object：object分组	
-*
-* 返回值： 0 收到	1 没收到
-*****************************************************/
-int qsdk_onenet_get_object_write(qsdk_onenet_stream_t stream)
-{
-	if(stream->write_status==10)	return RT_EOK;
-		
-	return RT_ERROR;
-}
-/****************************************************
-* 函数名称： qsdk_onenet_get_object_exec
-*
-* 函数作用： 查询当前object 是否收到平台exec消息
-*
-* 入口参数： object：object分组	
-*
-* 返回值： 0 收到	1 没收到
-*****************************************************/
-int qsdk_onenet_get_object_exec(qsdk_onenet_stream_t stream)
-{
-	if(stream->exec_status==10)	return RT_EOK;
-		
-	return RT_ERROR;
 }
 
 /****************************************************
@@ -1029,6 +717,340 @@ int qsdk_onenet_notify(qsdk_onenet_stream_t stream,int len,qsdk_onenet_value_t d
 __exit:
 	LOG_E("nb-iot notify data error\r\n");
 	return RT_ERROR;
+}
+/****************************************************
+* 函数名称： qsdk_onenet_get_connect
+*
+* 函数作用： 获取onenet 平台连接状态
+*
+* 入口参数： 无
+*
+* 返回值： 0：连接成功	     1：连接已断开
+*****************************************************/
+int qsdk_onenet_get_connect(void)
+{
+	if(onenet_device_table.connect_status==qsdk_onenet_status_success)
+		return RT_EOK;
+
+		return RT_ERROR;
+}
+/****************************************************
+* 函数名称： qsdk_onenet_get_object_read
+*
+* 函数作用： 查询当前object 是否收到平台read消息
+*
+* 入口参数： stream：object结构体
+*
+* 返回值： 0：收到	  1：没收到
+*****************************************************/
+int qsdk_onenet_get_object_read(qsdk_onenet_stream_t stream)
+{
+	if(stream->read_status==10)	return RT_EOK;
+		
+	return RT_ERROR;
+}
+
+/****************************************************
+* 函数名称： qsdk_onenet_get_object_write
+*
+* 函数作用： 查询当前object 是否收到平台write消息
+*
+* 入口参数： stream：object结构体
+*
+* 返回值： 0：收到	  1：没收到
+*****************************************************/
+int qsdk_onenet_get_object_write(qsdk_onenet_stream_t stream)
+{
+	if(stream->write_status==10)	return RT_EOK;
+		
+	return RT_ERROR;
+}
+/****************************************************
+* 函数名称： qsdk_onenet_get_object_exec
+*
+* 函数作用： 查询当前object 是否收到平台exec消息
+*
+* 入口参数： object：object分组	
+*
+* 返回值： 0：收到	  1：没收到
+*****************************************************/
+int qsdk_onenet_get_object_exec(qsdk_onenet_stream_t stream)
+{
+	if(stream->exec_status==10)	return RT_EOK;
+		
+	return RT_ERROR;
+}
+/****************************************************
+* 函数名称： qsdk_onenet_read_rsp
+*
+* 函数作用： 响应onenet read 操作
+*
+* 入口参数： msgid：消息ID		
+*
+*						 result：读写状态
+*	
+*						 stream：object 结构体
+*
+*						 len：上报的消息长度
+*
+*						 data：上报的消息值			
+*
+*						 index：指令序列号
+*
+*						 flge: 消息标识
+*
+* 返回值： 0：成功   1：失败
+*****************************************************/
+int qsdk_onenet_read_rsp(int msgid,int result,qsdk_onenet_stream_t stream,int len,qsdk_onenet_value_t data,int index,int flge)
+{
+		//返回 onenet read 响应
+		if(stream->valuetype==qsdk_onenet_value_string||stream->valuetype==qsdk_onenet_value_opaque||stream->valuetype==qsdk_onenet_value_hexStr)
+		{
+			LOG_D("AT+MIPLREADRSP=%d,%d,%d,%d,%d,%d,%d,%d,\"%s\",%d,%d\r\n",onenet_device_table.instance,msgid,result,stream->objid,\
+								 stream->insid,stream->resid,stream->valuetype,len,data->string_value,index,flge);
+		
+			if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLREADRSP=%d,%d,%d,%d,%d,%d,%d,%d,\"%s\",%d,%d",onenet_device_table.instance,msgid,result,stream->objid,\
+								 stream->insid,stream->resid,stream->valuetype,len,data->string_value,index,flge)!=RT_EOK) 
+			{
+				return RT_ERROR;
+			}
+		}
+		else if(stream->valuetype==qsdk_onenet_value_integer)
+		{
+			LOG_D("AT+MIPLREADRSP=%d,%d,%d,%d,%d,%d,%d,1,\"%d\",%d,%d\r\n",onenet_device_table.instance,msgid,result,stream->objid,\
+								 stream->insid,stream->resid,stream->valuetype,data->int_value,index,flge);			
+		
+			if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLREADRSP=%d,%d,%d,%d,%d,%d,%d,1,\"%d\",%d,%d",onenet_device_table.instance,msgid,result,stream->objid,\
+								 stream->insid,stream->resid,stream->valuetype,data->int_value,index,flge)!=RT_EOK) 
+			{
+				return RT_ERROR;
+			}
+		}
+		else if(stream->valuetype==qsdk_onenet_value_float)
+		{
+			LOG_D("AT+MIPLREADRSP=%d,%d,%d,%d,%d,%d,%d,1,\"%f\",%d,%d\r\n",onenet_device_table.instance,msgid,result,stream->objid,\
+								 stream->insid,stream->resid,stream->valuetype,data->float_value,index,flge);
+		
+			if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLREADRSP=%d,%d,%d,%d,%d,%d,%d,1,\"%f\",%d,%d",onenet_device_table.instance,msgid,result,stream->objid,\
+								 stream->insid,stream->resid,stream->valuetype,data->float_value,index,flge)!=RT_EOK)  
+			{
+				return RT_ERROR;
+			}
+		}
+		else if(stream->valuetype==qsdk_onenet_value_bool)
+		{
+			LOG_D("AT+MIPLREADRSP=%d,%d,%d,%d,%d,%d,%d,1,\"%d\",%d,%d\r\n",onenet_device_table.instance,msgid,result,stream->objid,\
+								 stream->insid,stream->resid,stream->valuetype,data->bool_value,index,flge);
+			
+			if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLREADRSP=%d,%d,%d,%d,%d,%d,%d,1,\"%d\",%d,%d",onenet_device_table.instance,msgid,result,stream->objid,\
+								 stream->insid,stream->resid,stream->valuetype,data->bool_value,index,flge)!=RT_EOK) 
+			{
+				return RT_ERROR;
+			}
+		}
+		stream->read_status=0;
+		return RT_EOK;
+}
+
+/****************************************************
+* 函数名称： onenet_read_rsp
+*
+* 函数作用： onenet read 响应
+*
+* 入口参数： msgid	消息ID			
+*	
+*							objid	即将操作的objectid
+*
+*							insid	即将操作的 instanceid
+*
+*							resid 即将操作的 instanceid							
+*
+* 返回值： 0：成功   1：失败
+*****************************************************/
+static int onenet_read_rsp(int msgid,int objid,int insid,int resid)
+{
+	int i=0;
+	
+	if(insid == -1&&resid == -1)
+	{
+		//循环检测objectid
+		for(;i<onenet_device_table.dev_len;i++)
+		{
+			//判断当前objectid 是否为即将要读的信息
+			if(onenet_stream_table[i].objid==objid)
+			{
+				onenet_stream_table[i].read_status=10;
+			}
+		}
+	}
+	else if(resid == -1)
+	{
+		//循环检测objectid
+		for(;i<onenet_device_table.dev_len;i++)
+		{
+			//判断当前objectid 是否为即将要读的信息
+			if(onenet_stream_table[i].objid==objid&&onenet_stream_table[i].insid==insid)
+			{
+				onenet_stream_table[i].read_status=10;
+			}
+		}
+	}
+	else
+	{
+		//循环检测objectid
+		for(;i<onenet_device_table.dev_len;i++)
+		{
+			//判断当前objectid 是否为即将要读的信息
+			if(onenet_stream_table[i].objid==objid&&onenet_stream_table[i].insid==insid&&onenet_stream_table[i].resid==resid)
+			{
+				onenet_stream_table[i].read_status=10;
+			}
+		}
+	}
+
+	//进入读回调函数
+		if(qsdk_onenet_read_rsp_callback(msgid,insid,resid)==RT_EOK)
+		{
+#ifdef QSDK_USING_DEBUG
+			LOG_D("onenet read rsp success\r\n");
+#endif
+			return RT_EOK;
+		}
+	// read 回调函数处理失败操作
+		LOG_E("onenet read rsp failure\r\n");
+		return  RT_ERROR;
+}
+/****************************************************
+* 函数名称： onenet_write_rsp
+*
+* 函数作用： onenet write 响应
+*
+* 入口参数： msgid：消息ID			
+*	
+*						 objid：即将操作的objectid
+*
+*						 insid：即将操作的 instanceid
+*
+*						 resid：即将操作的 instanceid		
+*
+*						 valuetype：write值类型	
+*
+*						 len：write值长度	
+*
+*						 value：write值	
+*
+* 返回值：0：成功   1：失败
+*****************************************************/
+static int onenet_write_rsp(int msgid,int objid,int insid,int resid,int valuetype,int len,char* value)
+{
+	int i=0,result=qsdk_onenet_status_result_Not_Found;;
+		//循环检测objectid
+	for(;i<onenet_device_table.dev_len;i++)
+	{
+		//判断当前objectid 是否为即将要读的信息
+		if(onenet_stream_table[i].objid==objid&&onenet_stream_table[i].insid==insid&&onenet_stream_table[i].resid==resid)
+		{
+			onenet_stream_table[i].write_status=10;
+			//进入 write 回调函数
+			if(qsdk_onenet_write_rsp_callback(len,value)==RT_EOK)
+			{
+				result=qsdk_onenet_status_result_write_success;
+#ifdef QSDK_USING_DEBUG
+				LOG_D("onenet write rsp success\r\n");
+#endif
+			}
+			else	//write回调函数处理失败操作
+			{
+				result=qsdk_onenet_status_result_Bad_Request;
+				LOG_E("onenet write rsp failure\r\n");
+			}
+			onenet_stream_table[i].write_status=0;
+			LOG_D("AT+MIPLWRITERSP=%d,%d,%d\r\n",onenet_device_table.instance,msgid,result);
+			if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLWRITERSP=%d,%d,%d",onenet_device_table.instance,msgid,result)!=RT_EOK) return RT_ERROR;
+			return RT_EOK;
+		}
+	}
+	//当前 objectid 不在列表中
+		return RT_ERROR;	
+}
+/****************************************************
+* 函数名称： onenet_execute_rsp
+*
+* 函数作用： onenet execute 响应
+*
+* 入口参数： msgid	消息ID			
+*	
+*							objid：即将操作的objectid
+*
+*							insid：即将操作的 instanceid
+*
+*							resid：即将操作的 instanceid		
+*
+*							len：cmd值长度	
+*
+*							cmd：本次cmd值	
+*
+* 返回值： 0：成功   1：失败
+*****************************************************/
+static int onenet_execute_rsp(int msgid,int objid,int insid,int resid,int len,char *cmd)
+{
+	int i=0,result=qsdk_onenet_status_result_Not_Found;
+	
+	for(;i<onenet_device_table.dev_len;i++)
+	{
+		//判断当前objectid 是否为即将要读的信息
+		if(onenet_stream_table[i].objid==objid&&onenet_stream_table[i].insid==insid&&onenet_stream_table[i].resid==resid)
+		{
+			onenet_stream_table[i].exec_status=10;
+			//进入 execute 回调函数
+			if(qsdk_onenet_exec_rsp_callback(len,cmd)==RT_EOK)
+			{
+				result=qsdk_onenet_status_result_write_success;
+#ifdef QSDK_USING_DEBUG
+				LOG_D("onenet execute rsp success\r\n");
+#endif
+			}
+			else	//execute回调函数处理失败操作
+			{
+				result=qsdk_onenet_status_result_Bad_Request;
+				LOG_E("onenet execute rsp failure\r\n");
+			}
+			onenet_stream_table[i].exec_status=0;
+			LOG_D("AT+MIPLEXECUTERSP=%d,%d,%d\r\n",onenet_device_table.instance,msgid,result);
+			if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLEXECUTERSP=%d,%d,%d",onenet_device_table.instance,msgid,result)!=RT_EOK) return RT_ERROR;	
+			
+			return RT_EOK;	
+		}
+	}
+	//返回 object 不在列表中
+	return RT_ERROR;
+}
+
+int qsdk_rsp_onenet_parameter(int instance,int msgid,int result)
+{
+
+
+		return 0;
+}
+
+
+/*************************************************************
+*	函数名称：	qsdk_onenet_clear_environment
+*
+*	函数功能：	清理onenet运行环境
+*
+*	入口参数：	无
+*
+*	返回参数：	0：成功  1：失败
+*
+*	说明：		
+*************************************************************/
+int qsdk_onenet_clear_environment(void)
+{	
+	rt_memset(&onenet_device_table,0,sizeof(onenet_device_table));		 	//清空数据流结构体
+	rt_memset(&onenet_stream_table,0,sizeof(onenet_stream_table));		 	//清空数据流结构体
+
+	return RT_EOK;
 }
 #if	(defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)
 /****************************************************
@@ -1109,26 +1131,6 @@ int qsdk_onenet_notify_and_ack(qsdk_onenet_stream_t stream,int len,qsdk_onenet_v
 	return RT_EOK;
 }
 #endif
-
-/*************************************************************
-*	函数名称：	qsdk_onenet_clear_environment
-*
-*	函数功能：	清理net结构体环境
-*
-*	入口参数：	无
-*
-*	返回参数：	0 成功  1	失败
-*
-*	说明：		
-*************************************************************/
-int qsdk_onenet_clear_environment(void)
-{	
-	rt_memset(&onenet_device_table,0,sizeof(onenet_device_table));		 	//清空数据流结构体
-	rt_memset(&onenet_stream_table,0,sizeof(onenet_stream_table));		 	//清空数据流结构体
-
-	return RT_EOK;
-}
-
 /****************************************************
 * 函数名称： head_node_parse
 *
