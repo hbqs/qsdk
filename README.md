@@ -38,7 +38,7 @@ qsdk开放源码，nb控制块、协议处理块均采用数据结构方式，�
 
 ![](https://github.com/hbqs/qsdk/blob/master/help/png/5.png?raw=true)
 
-6. **设置需要支持的引脚信息和协议**
+6. **设置需要支持的引脚和勾选需要支持的协议**
 
 ![](https://github.com/hbqs/qsdk/blob/master/help/png/6.png?raw=true)
 
