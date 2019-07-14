@@ -111,22 +111,26 @@ enum	NET_DATA_TYPE
 struct net_stream
 {
 	int		type;
+#if	(defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)
 	int 	port;
+#endif
 	int 	socket;
 	int 	server_port;
 	int 	revice_status;
 	int 	revice_len;
 	int		user_status;
 	int		connect_status;
-	char	*server_ip;
-	char 	*rev_data;
+	char	server_ip[16];
 };
 typedef struct net_stream *qsdk_net_client_t;
 
-
+#if	(defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)
 qsdk_net_client_t qsdk_net_client_init(int type,int port,char *server_ip,unsigned short server_port);
+#elif (defined QSDK_USING_M5311)
+qsdk_net_client_t qsdk_net_client_init(int type,int socket,char *server_ip,unsigned short server_port);
+int qsdk_net_set_out_format(void);
+#endif
 int qsdk_net_create_socket(qsdk_net_client_t client);
-int qsdk_net_connect_to_server(qsdk_net_client_t client);
 int qsdk_net_send_data(qsdk_net_client_t client,char *str);
 int qsdk_net_get_client_revice(qsdk_net_client_t client);
 int qsdk_net_get_client_connect(qsdk_net_client_t client);
@@ -184,7 +188,7 @@ struct onenet_stream
 {
 	int objid;
 	int inscount;
-	char *bitmap;
+	char bitmap[QSDK_ONENET_INSTANCE_MAX_NUM];
 	int atts;
 	int acts;
 	int insid;

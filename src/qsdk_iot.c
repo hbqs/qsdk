@@ -6,6 +6,7 @@
  * Change Logs:
  * Date           Author       Notes
  * 2018-11-14     longmain     first version
+ * 2018-07-03     longmain     add iot finsh cmd
  */
  
 #include "qsdk.h"
@@ -13,6 +14,17 @@
 #include "string.h"
 #include "stdlib.h"
 
+#ifdef QSDK_USING_IOT
+
+#ifdef RT_USING_ULOG
+#define LOG_TAG              "[QSDK/IOT]"
+#ifdef QSDK_USING_LOG
+#define LOG_LVL              LOG_LVL_DBG
+#else
+#define LOG_LVL              LOG_LVL_INFO
+#endif
+#include <ulog.h>
+#else
 #define DBG_ENABLE
 #define DBG_COLOR
 #define DBG_SECTION_NAME              "[QSDK/IOT]"
@@ -23,9 +35,9 @@
 #endif /* QSDK_DEBUG */
 
 #include <rtdbg.h>
+#endif
 
 
-#ifdef QSDK_USING_IOT
 
 #define EVENT_UPDATE_OK						(0x70<<1)
 #define EVENT_UPDATE_ERROR				(0x71<<1)
@@ -51,10 +63,10 @@ extern rt_event_t nb_event;
 *************************************************************/
 int qsdk_iot_open_update_status(void)
 {
-	LOG_D("AT+NSMI=1\r\n");
+	LOG_D("AT+NSMI=1\n");
 	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+NSMI=1")!=RT_EOK)	
 	{
-		LOG_E("open iot update status fail\r\n");
+		LOG_E("open iot update status error\n");
 		return RT_ERROR;
 	}
 	return RT_EOK;
@@ -72,10 +84,10 @@ int qsdk_iot_open_update_status(void)
 *************************************************************/
 int qsdk_iot_open_down_date_status(void)
 {
-	LOG_D("AT+NNMI=1\r\n");
+	LOG_D("AT+NNMI=1\n");
 	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+NNMI=1")!=RT_EOK)
 	{
-		LOG_E("open iot down status fail\r\n");
+		LOG_E("open iot down status error\n");
 		return RT_ERROR;
 	}
 	
@@ -98,15 +110,15 @@ int qsdk_iot_update(char *str)
 	char *buf=rt_calloc(1,strlen(str)*2);
 	if(buf==RT_NULL)
 	{
-		LOG_E("net create resp buf error\r\n");
+		LOG_E("net create resp buf error\n");
 		return RT_ERROR;
 	}
 	string_to_hex(str,strlen(str),buf);
 
-	LOG_D("AT+NMGS=%d,%s\r\n",strlen(buf)/2,buf);
+	LOG_D("AT+NMGS=%d,%s\n",strlen(buf)/2,buf);
 	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+NMGS=%d,%s",strlen(buf)/2,buf)!=RT_EOK)
 	{
-		LOG_E("date notify send fail\r\n");
+		LOG_E("date notify send error\n");
 		rt_free(buf);
 		return RT_ERROR;
 	}
@@ -117,11 +129,11 @@ int qsdk_iot_update(char *str)
 			return  RT_EOK;
 		else
 		{
-			LOG_E("iot date notify failer\r\n");
+			LOG_E("iot date notify error\n");
 			return RT_ERROR;
 		}
 	}
-	LOG_E("iot date notify failer\r\n");
+	LOG_E("iot date notify error\n");
 	return RT_ERROR;
 }
 
@@ -140,14 +152,14 @@ void iot_event_func(char *event)
 			char *buf=rt_calloc(1,atoi(len));
 			if(str==RT_NULL)
 			{
-				LOG_E("iot callack create buf error\r\n");
+				LOG_E("iot callack create buf error\n");
 				rt_free(buf);
 			}
 			hexstring_to_string(str,atoi(len),buf);
 			if(qsdk_iot_data_callback(buf,atoi(len))!=RT_EOK)
 			{
 				rt_free(buf);
-				LOG_E("qsdk iot data callback failure\r\n");
+				LOG_E("qsdk iot data callback error\n");
 			}
 			rt_free(buf);
 		}
@@ -160,6 +172,41 @@ void iot_event_func(char *event)
 				rt_event_send(nb_event,EVENT_UPDATE_ERROR);
 		}
 }
+
+#ifdef QSDK_USING_FINSH_CMD
+void qsdk_iot(int argc,char**argv)
+{
+	if (argc > 1)
+	{
+		if (!strcmp(argv[1], "send"))
+		{
+				if (argc > 2)
+				{
+						if(qsdk_iot_update(argv[2])!=RT_EOK)
+							rt_kprintf("iot data send error\n");
+						else rt_kprintf("iot data send success\n");
+				}
+				else
+				{
+						rt_kprintf("qsdk_iot send <data>            -  Please enter the data you need to send.\n");
+				}
+		}
+		else
+		{
+				rt_kprintf("Unknown command. Please enter 'qsdk_iot' for help\n");
+		}
+	}
+	else
+	{
+			rt_kprintf("Usage:\n");
+			rt_kprintf("qsdk_iot send <data>          - Send data to iot server\n");
+	}
+}
+
+
+MSH_CMD_EXPORT(qsdk_iot, qsdk iot function);
+#endif //QSDK_USING_FINSH_CMD
+
 #endif
 
 

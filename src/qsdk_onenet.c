@@ -12,8 +12,19 @@
 #include "qsdk.h"
 #include <at.h>
 #include "string.h"
-#include "stdlib.h"
+#include <stdlib.h>
 
+#ifdef QSDK_USING_ONENET
+
+#ifdef RT_USING_ULOG
+#define LOG_TAG              "[QSDK/ONENET]"
+#ifdef QSDK_USING_LOG
+#define LOG_LVL              LOG_LVL_DBG
+#else
+#define LOG_LVL              LOG_LVL_INFO
+#endif
+#include <ulog.h>
+#else
 #define DBG_ENABLE
 #define DBG_COLOR
 #define DBG_SECTION_NAME              "[QSDK/ONENET]"
@@ -24,8 +35,8 @@
 #endif /* QSDK_DEBUG */
 
 #include <rtdbg.h>
+#endif
 
-#ifdef QSDK_USING_ONENET
 
 //定义onenet事件
 #define event_bootstrap_fail  				(3<<1)
@@ -43,9 +54,7 @@
 #define event_response_success		 		(20<<1)
 #define event_notify_fail				 			(25<<1)
 #define event_notify_success		 			(26<<1)
-#define event_observer_run		 				(27<<1)
 #define event_observer_success		 		(28<<1)
-#define event_discover_run	 					(29<<1)
 #define event_discover_success		 		(30<<1)
 
 struct onenet_device
@@ -108,6 +117,8 @@ int qsdk_onenet_init_environment(void)
 	onenet_device_table.lifetime=QSDK_ONENET_LIFE_TIME;
 	onenet_device_table.connect_status=qsdk_onenet_status_init;			 		//onenet连接状态初始化
 	onenet_device_table.initstep=0;												 							//初始化步骤设置为0
+	onenet_device_table.observercount=0;
+	onenet_device_table.discovercount=0;
 	return RT_EOK;
 }
 
@@ -142,12 +153,12 @@ qsdk_onenet_stream_t qsdk_onenet_object_init(int objid,int insid,int resid,int i
 	onenet_stream_table[num].insid=insid;
 	onenet_stream_table[num].resid=resid;
 	onenet_stream_table[num].inscount=inscount;
-	onenet_stream_table[num].bitmap=bitmap;
 	onenet_stream_table[num].atts=atts;
 	onenet_stream_table[num].acts=acts;
 	onenet_stream_table[num].valuetype=type;
 	onenet_stream_table[num].user_status=1;
 	onenet_device_table.dev_len++;
+	strcpy(onenet_stream_table[num].bitmap,bitmap);
 	return &onenet_stream_table[num];
 }
 
@@ -213,7 +224,7 @@ static int onenet_create_instance(void)
 	LOG_D("注册码==%s\r\n",config_t);
 #endif
 			
-	LOG_D("AT+MIPLCREATE=%d,%s,0,%d,0\r\n",rt_strlen(config_t)/2,config_t,rt_strlen(config_t)/2);		
+	LOG_D("AT+MIPLCREATE=%d,%s,0,%d,0\n",rt_strlen(config_t)/2,config_t,rt_strlen(config_t)/2);		
 			
 	//发送注册命令到模组
 	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLCREATE=%d,%s,0,%d,0",rt_strlen(config_t)/2,config_t,rt_strlen(config_t)/2)!=RT_EOK) 
@@ -250,11 +261,11 @@ __exit:
 int qsdk_onenet_delete_instance(void)
 {
 	//发送删除instance 命令
-	LOG_D("AT+MIPLDELETE=%d\r\n",onenet_device_table.instance);		
+	LOG_D("AT+MIPLDELETE=%d\n",onenet_device_table.instance);		
 
 	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLDELETE=%d",onenet_device_table.instance)!=RT_EOK)
 	{
-		LOG_E("delete onenet instance failure\r\n");
+		LOG_E("delete onenet instance failure\n");
 		return RT_ERROR;
 	}
 	rt_memset(&onenet_device_table,0,sizeof(onenet_device_table));		 	//清空数据流结构体
@@ -280,39 +291,42 @@ static int onenet_create_object(void)
 	int str[QSDK_ONENET_OBJECT_MAX_NUM];
 	onenet_device_table.objcount=0;
 	//循环添加 object
-	for(;i<onenet_device_table.dev_len;i++)
+	for(;i<QSDK_ONENET_OBJECT_MAX_NUM;i++)
 	{			
-		//循环查询object 并且添加到数组，用于记录，防止重复添加
-		for(j=0;j<onenet_device_table.objcount;j++)
+		if(onenet_stream_table[i].user_status)
 		{
-			if(str[j]!=onenet_stream_table[i].objid)
-				status=1;
-			else 
+			//循环查询object 并且添加到数组，用于记录，防止重复添加
+			for(j=0;j<onenet_device_table.objcount;j++)
 			{
-				status=0;		
-				break;
+				if(str[j]!=onenet_stream_table[i].objid)
+					status=1;
+				else 
+				{
+					status=0;		
+					break;
+				}
 			}
-		}
-		//添加object 到模组
-		if(status)
-		{	
-			//记录当前object
-			str[onenet_device_table.objcount++]=onenet_stream_table[i].objid;
+			//添加object 到模组
+			if(status)
+			{	
+				//记录当前object
+				str[onenet_device_table.objcount++]=onenet_stream_table[i].objid;
 #ifdef QSDK_USING_ME3616
-			onenet_device_table.inscount+=onenet_device_table.inscount;
+				onenet_device_table.inscount+=onenet_device_table.inscount;
 #else 
-			onenet_device_table.inscount=onenet_device_table.dev_len;
+				onenet_device_table.inscount=onenet_device_table.dev_len;
 #endif
-		//向模组添加 objectid	
-			LOG_D("AT+MIPLADDOBJ=%d,%d,%d,\"%s\",%d,%d\r\n",onenet_device_table.instance,onenet_stream_table[i].objid,\
-			onenet_stream_table[i].inscount,onenet_stream_table[i].bitmap,onenet_stream_table[i].atts,onenet_stream_table[i].acts);
+			//向模组添加 objectid	
+				LOG_D("AT+MIPLADDOBJ=%d,%d,%d,\"%s\",%d,%d\n",onenet_device_table.instance,onenet_stream_table[i].objid,\
+				onenet_stream_table[i].inscount,onenet_stream_table[i].bitmap,onenet_stream_table[i].atts,onenet_stream_table[i].acts);
 
-			if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLADDOBJ=%d,%d,%d,\"%s\",%d,%d",onenet_device_table.instance,\
-				onenet_stream_table[i].objid,onenet_stream_table[i].inscount,onenet_stream_table[i].bitmap,\
-				onenet_stream_table[i].atts,onenet_stream_table[i].acts)!=RT_EOK) return RT_ERROR;
+				if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLADDOBJ=%d,%d,%d,\"%s\",%d,%d",onenet_device_table.instance,\
+					onenet_stream_table[i].objid,onenet_stream_table[i].inscount,onenet_stream_table[i].bitmap,\
+					onenet_stream_table[i].atts,onenet_stream_table[i].acts)!=RT_EOK) return RT_ERROR;
 #ifdef QSDK_USING_DEBUG
-			LOG_D("create object success id:%d\r\n",onenet_stream_table[i].objid);
+				LOG_D("create object success id:%d\r\n",onenet_stream_table[i].objid);
 #endif
+			}
 		}
 	}
 #ifdef QSDK_USING_DEBUG
@@ -333,9 +347,9 @@ static int onenet_create_object(void)
 ********************************************************/
 int qsdk_onenet_delete_object(qsdk_onenet_stream_t stream)
 {
-	int i=0,j=0;
+	int i=0;
 	//循环查询并且删除 object
-	for(i=0;i<onenet_device_table.dev_len;i++)
+	for(i=0;i<QSDK_ONENET_OBJECT_MAX_NUM;i++)
 	{
 		//判断当前 object 是否为要删除的object
 		if(onenet_stream_table[i].objid==stream->objid)
@@ -344,18 +358,12 @@ int qsdk_onenet_delete_object(qsdk_onenet_stream_t stream)
 			LOG_D("AT+MIPLDELOBJ=%d,%d\r\n",onenet_device_table.instance,onenet_stream_table[i].objid);
 
 			if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLDELOBJ=%d,%d",onenet_device_table.instance,onenet_stream_table[i].objid)!=RT_EOK) return RT_ERROR;
-			
-			//删除数据流设备信息中的 object
-			for(j=i;j<onenet_device_table.dev_len;j++)
-			{
-				//删除当前 object
-				rt_memset(&onenet_stream_table[j],0,sizeof(onenet_stream_table[j]));
-				//判断后面会都还有object，如果有拷贝到当前位置
-				if(j<onenet_device_table.dev_len-1)
-				rt_memcpy(&onenet_stream_table[j],&onenet_stream_table[j+1],sizeof(onenet_stream_table[j+1]));
-			}
+			//删除当前 object
+			rt_memset(&onenet_stream_table[i],0,sizeof(onenet_stream_table[i]));
+
 			//数据流中设备长度-1
 			onenet_device_table.dev_len-=1;
+			onenet_device_table.objcount-=1;
 #ifdef QSDK_USING_DEBUG
 			LOG_D("delete onenet object success id:%d \r\n",stream->objid);
 #endif
@@ -374,95 +382,98 @@ static int onenet_discover_rsp(void)
 	resourcemap=rt_calloc(1,50);
 	if(resourcemap==RT_NULL)
 	{
-		LOG_E("dicover rsp calloc fail\r\n");
+		LOG_E("dicover rsp calloc fail\n");
 		return RT_ERROR;
 	}
 	str_res=rt_calloc(1,QSDK_ONENET_OBJECT_MAX_NUM);
 	if(str_res==RT_NULL)
 	{
-		LOG_E("dicover rsp calloc fail\r\n");
+		LOG_E("dicover rsp calloc fail\n");
 		rt_free(resourcemap);
 		return RT_ERROR;
 	}
 	str_obj=rt_calloc(1,QSDK_ONENET_OBJECT_MAX_NUM);
 	if(str_obj==RT_NULL)
 	{
-		LOG_E("dicover rsp calloc fail\r\n");
+		LOG_E("dicover rsp calloc fail\n");
 		rt_free(resourcemap);
 		rt_free(str_res);
 		return RT_ERROR;
 	}
 	//循环查找未discover object
-	for(;i<onenet_device_table.dev_len;i++)
+	for(;i<QSDK_ONENET_OBJECT_MAX_NUM;i++)
 	{			
-		//循环查询object 并且添加到数组，用于记录，防止重复添加
-		for(j=0;j<objectcount;j++)
-		{	
-			if(str_obj[j]!=onenet_stream_table[i].objid)
-			{
-				status=1;	
-			}
-			else 
-			{
-				status=0;		
-				break;
-			}
-		}
-		//discover object 到模组
-		if(status)
-		{	
-			resourcecount=0;
-			//记录当前object
-			str_obj[objectcount++]=onenet_stream_table[i].objid;
-			status=1;		
-			for(k=0;k<onenet_device_table.dev_len;k++)
-			{
-				//判断当前objectid 是否为 discover objectid
-				if(onenet_stream_table[k].objid==onenet_stream_table[i].objid)
+		if(onenet_stream_table[i].user_status)
+		{
+			//循环查询object 并且添加到数组，用于记录，防止重复添加
+			for(j=0;j<objectcount;j++)
+			{	
+				if(str_obj[j]!=onenet_stream_table[i].objid)
 				{
-					//判断当前 resourceid 是否上报过
-					for(j=0;j<resourcecount;j++)
-					{
-						//如果 resourceid没有上报过
-						if(str_res[j]!=onenet_stream_table[k].resid)
-								status=1;		//上报标识置一
-						else 
-						{
-							status=0;
-							break;
-						}									
-					}
-					//判断该 resourceid 是否需要上报
-					if(status)
-					{
-						//记录需要上报的 resourceid
-						str_res[resourcecount++]=onenet_stream_table[k].resid;
-						
-						//判断本次上报的 resourceid 是否为第一次找到
-						if(resourcecount-1)
-							rt_sprintf(resourcemap,"%s;%d",resourcemap,onenet_stream_table[k].resid);
-						else
-							rt_sprintf(resourcemap,"%d",onenet_stream_table[k].resid);
-					}	
+					status=1;	
+				}
+				else 
+				{
+					status=0;		
+					break;
 				}
 			}
+			//discover object 到模组
+			if(status)
+			{	
+				resourcecount=0;
+				//记录当前object
+				str_obj[objectcount++]=onenet_stream_table[i].objid;
+				status=1;		
+				for(k=0;k<onenet_device_table.dev_len;k++)
+				{
+					//判断当前objectid 是否为 discover objectid
+					if(onenet_stream_table[k].objid==onenet_stream_table[i].objid)
+					{
+						//判断当前 resourceid 是否上报过
+						for(j=0;j<resourcecount;j++)
+						{
+							//如果 resourceid没有上报过
+							if(str_res[j]!=onenet_stream_table[k].resid)
+									status=1;		//上报标识置一
+							else 
+							{
+								status=0;
+								break;
+							}									
+						}
+						//判断该 resourceid 是否需要上报
+						if(status)
+						{
+							//记录需要上报的 resourceid
+							str_res[resourcecount++]=onenet_stream_table[k].resid;
+							
+							//判断本次上报的 resourceid 是否为第一次找到
+							if(resourcecount-1)
+								rt_sprintf(resourcemap,"%s;%d",resourcemap,onenet_stream_table[k].resid);
+							else
+								rt_sprintf(resourcemap,"%d",onenet_stream_table[k].resid);
+						}	
+					}
+				}
 #ifdef QSDK_USING_DEBUG
-			j=0;
-			//循环打印已经记录的 resourceid
-			for(;j<resourcecount;j++)
-			LOG_D("resourcecount=%d\r\n",str_res[j]);
+				j=0;
+				//循环打印已经记录的 resourceid
+				for(;j<resourcecount;j++)
+				LOG_D("resourcecount=%d\r\n",str_res[j]);
 
-			//打印 resourceid map
-			LOG_D("map=%s\r\n",resourcemap);
+				//打印 resourceid map
+				LOG_D("map=%s\r\n",resourcemap);
 #endif
-			LOG_D("AT+MIPLDISCOVERRSP=%d,%d,1,%d,\"%s\"\r\n",onenet_device_table.instance,onenet_stream_table[i].objid,rt_strlen(resourcemap),resourcemap);
-			if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLDISCOVERRSP=%d,%d,1,%d,\"%s\"",onenet_device_table.instance,onenet_stream_table[i].objid,rt_strlen(resourcemap),resourcemap)!=RT_EOK)
-			{
-				LOG_E("+MIPLDISCOVERRSP  failure \r\n");
-				return RT_ERROR;
-			}	
-			rt_memset(str_res,0,sizeof(str_res));
-			rt_memset(resourcemap,0,sizeof(resourcemap));
+				LOG_D("AT+MIPLDISCOVERRSP=%d,%d,1,%d,\"%s\"\n",onenet_device_table.instance,onenet_stream_table[i].objid,rt_strlen(resourcemap),resourcemap);
+				if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLDISCOVERRSP=%d,%d,1,%d,\"%s\"",onenet_device_table.instance,onenet_stream_table[i].objid,rt_strlen(resourcemap),resourcemap)!=RT_EOK)
+				{
+					LOG_E("+MIPLDISCOVERRSP  failure \r\n");
+					return RT_ERROR;
+				}	
+				rt_memset(str_res,0,sizeof(str_res));
+				rt_memset(resourcemap,0,sizeof(resourcemap));
+			}
 		}
 	}
 	rt_free(str_obj);
@@ -486,19 +497,19 @@ int qsdk_onenet_open(void)
 	onenet_device_table.lifetime=QSDK_ONENET_LIFE_TIME;
 		if(onenet_create_object()!=RT_EOK)							//创建 object
 	{
-		LOG_E("onenet add objece failure\r\n");
+		LOG_E("onenet add objece failure\n");
 		return RT_ERROR;
 	}
 	onenet_device_table.initstep=2;
 #if	(defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)||	(defined QSDK_USING_M5311)
 	if(onenet_discover_rsp()!=RT_EOK)						// notify 设备参数到模组
 	{
-		LOG_E("onenet add discover failure\r\n");
+		LOG_E("onenet add discover failure\n");
 		return RT_ERROR;
 	}
 	onenet_device_table.initstep=3;
 #endif
-	LOG_D("AT+MIPLOPEN=%d,%d\r\n",onenet_device_table.instance,onenet_device_table.lifetime);
+	LOG_D("AT+MIPLOPEN=%d,%d\n",onenet_device_table.instance,onenet_device_table.lifetime);
 	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLOPEN=%d,%d",onenet_device_table.instance,onenet_device_table.lifetime)!=RT_EOK) 
 	{
 		LOG_E("onener open failure\r\n");
@@ -529,7 +540,7 @@ int qsdk_onenet_open(void)
 		LOG_D("onenet reg success\r\n");
 #endif
 		onenet_device_table.initstep=5;
-	if(rt_event_recv(nb_event,event_observer_run|event_observer_success,RT_EVENT_FLAG_AND|RT_EVENT_FLAG_CLEAR,30000,&status)!=RT_EOK)
+	if(rt_event_recv(nb_event,event_observer_success,RT_EVENT_FLAG_AND|RT_EVENT_FLAG_CLEAR,60000,&status)!=RT_EOK)
 	{
 		LOG_E("wait onenet observe event timeout\r\n");
 		return RT_ERROR;
@@ -538,11 +549,14 @@ int qsdk_onenet_open(void)
 		LOG_D("onenet observe success\r\n");
 #endif
 	onenet_device_table.initstep=6;
-	if(rt_event_recv(nb_event,event_discover_run|event_discover_success,RT_EVENT_FLAG_AND|RT_EVENT_FLAG_CLEAR,30000,&status)!=RT_EOK)
+	if(rt_event_recv(nb_event,event_discover_success,RT_EVENT_FLAG_AND|RT_EVENT_FLAG_CLEAR,60000,&status)!=RT_EOK)
 	{
-		LOG_E("wait onenet observe event timeout\r\n");
+		LOG_E("wait onenet discover event timeout\r\n");
 		return RT_ERROR;
 	}
+#ifdef QSDK_USING_DEBUG
+		LOG_D("onenet discover success\r\n");
+#endif
 	if(onenet_device_table.discover_status==qsdk_onenet_status_success)						//判断	discover 是否初始化成功
 	{
 		LOG_D("onenet lwm2m connect success\r\n");
@@ -568,7 +582,7 @@ int qsdk_onenet_close(void)
 {
 	rt_uint32_t status;
 	onenet_device_table.close_status=qsdk_onenet_status_close_start;
-	LOG_D("AT+MIPLCLOSE=%d\r\n",onenet_device_table.instance);
+	LOG_D("AT+MIPLCLOSE=%d\n",onenet_device_table.instance);
 	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLCLOSE=%d",onenet_device_table.instance)!=RT_EOK)
 	{
 		LOG_E("close onenet instance failure\r\n");
@@ -600,7 +614,7 @@ int qsdk_onenet_update_time(int flge)
 	rt_uint32_t status;
 	//向平台发送更新命令
 	onenet_device_table.update_time=qsdk_onenet_status_update_init;
-	LOG_D("AT+MIPLUPDATE=%d,%d,%d\r\n",onenet_device_table.instance,onenet_device_table.lifetime,flge);
+	LOG_D("AT+MIPLUPDATE=%d,%d,%d\n",onenet_device_table.instance,onenet_device_table.lifetime,flge);
 	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLUPDATE=%d,%d,%d",onenet_device_table.instance,onenet_device_table.lifetime,flge)!=RT_EOK)
 	{
 		return  RT_ERROR;
@@ -640,7 +654,7 @@ int qsdk_onenet_quick_start(void)
 {	
 	if(onenet_create_instance()!=RT_EOK)	 //创建 instance
 	{
-		LOG_E("onenet create instance failure\r\n");
+		LOG_E("onenet create instance failure\n");
 		goto failure;
 	}
 	onenet_device_table.initstep=1;
@@ -676,7 +690,7 @@ int qsdk_onenet_notify(qsdk_onenet_stream_t stream,int len,qsdk_onenet_value_t d
 {
 	if(stream->valuetype==qsdk_onenet_value_string||stream->valuetype==qsdk_onenet_value_opaque||stream->valuetype==qsdk_onenet_value_hexStr)
 	{
-		LOG_D("AT+MIPLNOTIFY=%d,%d,%d,%d,%d,%d,%d,\"%s\",0,%d\r\n",onenet_device_table.instance,stream->msgid,stream->objid,\
+		LOG_D("AT+MIPLNOTIFY=%d,%d,%d,%d,%d,%d,%d,\"%s\",0,%d\n",onenet_device_table.instance,stream->msgid,stream->objid,\
 			stream->insid,stream->resid,stream->valuetype,len,&data->string_value,flge);
 
 		if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLNOTIFY=%d,%d,%d,%d,%d,%d,%d,\"%s\",0,%d",onenet_device_table.instance,\
@@ -685,17 +699,16 @@ int qsdk_onenet_notify(qsdk_onenet_stream_t stream,int len,qsdk_onenet_value_t d
 	}
 	else if(stream->valuetype==qsdk_onenet_value_integer)	
 	{
-		LOG_D("AT+MIPLNOTIFY=%d,%d,%d,%d,%d,%d,1,\"%d\",0,%d\r\n",onenet_device_table.instance,stream->msgid,stream->objid,\
+		LOG_D("AT+MIPLNOTIFY=%d,%d,%d,%d,%d,%d,1,\"%d\",0,%d\n",onenet_device_table.instance,stream->msgid,stream->objid,\
 			stream->insid,stream->resid,stream->valuetype,data->int_value,flge);
 
 		if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLNOTIFY=%d,%d,%d,%d,%d,%d,1,\"%d\",0,%d",onenet_device_table.instance,\
-			stream->msgid,stream->objid,stream->insid,stream->resid,stream->valuetype,data->int_value,flge\
-		)!=RT_EOK)  
+			stream->msgid,stream->objid,stream->insid,stream->resid,stream->valuetype,data->int_value,flge)!=RT_EOK)  
 		goto __exit;	
 	}				
 	else if(stream->valuetype==qsdk_onenet_value_float)
 	{	
-		LOG_D("AT+MIPLNOTIFY=%d,%d,%d,%d,%d,%d,1,\"%f\",0,%d\r\n",onenet_device_table.instance,stream->msgid,stream->objid,\
+		LOG_D("AT+MIPLNOTIFY=%d,%d,%d,%d,%d,%d,1,\"%f\",0,%d\n",onenet_device_table.instance,stream->msgid,stream->objid,\
 				stream->insid,stream->resid,stream->valuetype,data->float_value,flge);
 	
 		if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLNOTIFY=%d,%d,%d,%d,%d,%d,1,\"%f\",0,%d",onenet_device_table.instance,\
@@ -704,10 +717,10 @@ int qsdk_onenet_notify(qsdk_onenet_stream_t stream,int len,qsdk_onenet_value_t d
 	}				
 	else if(stream->valuetype==qsdk_onenet_value_bool)
 	{
-		LOG_D("AT+MIPLNOTIFY=%d,%d,%d,%d,%d,%d,1,\"%f\",0,%d\r\n",onenet_device_table.instance,stream->msgid,stream->objid,\
+		LOG_D("AT+MIPLNOTIFY=%d,%d,%d,%d,%d,%d,1,\"%d\",0,%d\n",onenet_device_table.instance,stream->msgid,stream->objid,\
 			stream->insid,stream->resid,stream->valuetype,data->bool_value,flge);			
 
-		if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLNOTIFY=%d,%d,%d,%d,%d,%d,1,\"%f\",0,%d",onenet_device_table.instance,\
+		if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLNOTIFY=%d,%d,%d,%d,%d,%d,1,\"%d\",0,%d",onenet_device_table.instance,\
 			stream->msgid,stream->objid,stream->insid,stream->resid,stream->valuetype,data->bool_value,flge)!=RT_EOK)   
 		goto __exit;		
 	}
@@ -806,18 +819,18 @@ int qsdk_onenet_read_rsp(int msgid,int result,qsdk_onenet_stream_t stream,int le
 		//返回 onenet read 响应
 		if(stream->valuetype==qsdk_onenet_value_string||stream->valuetype==qsdk_onenet_value_opaque||stream->valuetype==qsdk_onenet_value_hexStr)
 		{
-			LOG_D("AT+MIPLREADRSP=%d,%d,%d,%d,%d,%d,%d,%d,\"%s\",%d,%d\r\n",onenet_device_table.instance,msgid,result,stream->objid,\
-								 stream->insid,stream->resid,stream->valuetype,len,data->string_value,index,flge);
+			LOG_D("AT+MIPLREADRSP=%d,%d,%d,%d,%d,%d,%d,%d,\"%s\",%d,%d\n",onenet_device_table.instance,msgid,result,stream->objid,\
+								 stream->insid,stream->resid,stream->valuetype,len,&data->string_value,index,flge);
 		
 			if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLREADRSP=%d,%d,%d,%d,%d,%d,%d,%d,\"%s\",%d,%d",onenet_device_table.instance,msgid,result,stream->objid,\
-								 stream->insid,stream->resid,stream->valuetype,len,data->string_value,index,flge)!=RT_EOK) 
+								 stream->insid,stream->resid,stream->valuetype,len,&data->string_value,index,flge)!=RT_EOK) 
 			{
 				return RT_ERROR;
 			}
 		}
 		else if(stream->valuetype==qsdk_onenet_value_integer)
 		{
-			LOG_D("AT+MIPLREADRSP=%d,%d,%d,%d,%d,%d,%d,1,\"%d\",%d,%d\r\n",onenet_device_table.instance,msgid,result,stream->objid,\
+			LOG_D("AT+MIPLREADRSP=%d,%d,%d,%d,%d,%d,%d,1,\"%d\",%d,%d\n",onenet_device_table.instance,msgid,result,stream->objid,\
 								 stream->insid,stream->resid,stream->valuetype,data->int_value,index,flge);			
 		
 			if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLREADRSP=%d,%d,%d,%d,%d,%d,%d,1,\"%d\",%d,%d",onenet_device_table.instance,msgid,result,stream->objid,\
@@ -828,7 +841,7 @@ int qsdk_onenet_read_rsp(int msgid,int result,qsdk_onenet_stream_t stream,int le
 		}
 		else if(stream->valuetype==qsdk_onenet_value_float)
 		{
-			LOG_D("AT+MIPLREADRSP=%d,%d,%d,%d,%d,%d,%d,1,\"%f\",%d,%d\r\n",onenet_device_table.instance,msgid,result,stream->objid,\
+			LOG_D("AT+MIPLREADRSP=%d,%d,%d,%d,%d,%d,%d,1,\"%f\",%d,%d\n",onenet_device_table.instance,msgid,result,stream->objid,\
 								 stream->insid,stream->resid,stream->valuetype,data->float_value,index,flge);
 		
 			if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLREADRSP=%d,%d,%d,%d,%d,%d,%d,1,\"%f\",%d,%d",onenet_device_table.instance,msgid,result,stream->objid,\
@@ -839,7 +852,7 @@ int qsdk_onenet_read_rsp(int msgid,int result,qsdk_onenet_stream_t stream,int le
 		}
 		else if(stream->valuetype==qsdk_onenet_value_bool)
 		{
-			LOG_D("AT+MIPLREADRSP=%d,%d,%d,%d,%d,%d,%d,1,\"%d\",%d,%d\r\n",onenet_device_table.instance,msgid,result,stream->objid,\
+			LOG_D("AT+MIPLREADRSP=%d,%d,%d,%d,%d,%d,%d,1,\"%d\",%d,%d\n",onenet_device_table.instance,msgid,result,stream->objid,\
 								 stream->insid,stream->resid,stream->valuetype,data->bool_value,index,flge);
 			
 			if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLREADRSP=%d,%d,%d,%d,%d,%d,%d,1,\"%d\",%d,%d",onenet_device_table.instance,msgid,result,stream->objid,\
@@ -912,12 +925,12 @@ static int onenet_read_rsp(int msgid,int objid,int insid,int resid)
 		if(qsdk_onenet_read_rsp_callback(msgid,insid,resid)==RT_EOK)
 		{
 #ifdef QSDK_USING_DEBUG
-			LOG_D("onenet read rsp success\r\n");
+			LOG_D("onenet read rsp success\n");
 #endif
 			return RT_EOK;
 		}
 	// read 回调函数处理失败操作
-		LOG_E("onenet read rsp failure\r\n");
+		LOG_E("onenet read rsp failure\n");
 		return  RT_ERROR;
 }
 /****************************************************
@@ -962,10 +975,10 @@ static int onenet_write_rsp(int msgid,int objid,int insid,int resid,int valuetyp
 			else	//write回调函数处理失败操作
 			{
 				result=qsdk_onenet_status_result_Bad_Request;
-				LOG_E("onenet write rsp failure\r\n");
+				LOG_E("onenet write rsp failure\n");
 			}
 			onenet_stream_table[i].write_status=0;
-			LOG_D("AT+MIPLWRITERSP=%d,%d,%d\r\n",onenet_device_table.instance,msgid,result);
+			LOG_D("AT+MIPLWRITERSP=%d,%d,%d\n",onenet_device_table.instance,msgid,result);
 			if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLWRITERSP=%d,%d,%d",onenet_device_table.instance,msgid,result)!=RT_EOK) return RT_ERROR;
 			return RT_EOK;
 		}
@@ -1007,16 +1020,16 @@ static int onenet_execute_rsp(int msgid,int objid,int insid,int resid,int len,ch
 			{
 				result=qsdk_onenet_status_result_write_success;
 #ifdef QSDK_USING_DEBUG
-				LOG_D("onenet execute rsp success\r\n");
+				LOG_D("onenet execute rsp success\n");
 #endif
 			}
 			else	//execute回调函数处理失败操作
 			{
 				result=qsdk_onenet_status_result_Bad_Request;
-				LOG_E("onenet execute rsp failure\r\n");
+				LOG_E("onenet execute rsp failure\n");
 			}
 			onenet_stream_table[i].exec_status=0;
-			LOG_D("AT+MIPLEXECUTERSP=%d,%d,%d\r\n",onenet_device_table.instance,msgid,result);
+			LOG_D("AT+MIPLEXECUTERSP=%d,%d,%d\n",onenet_device_table.instance,msgid,result);
 			if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLEXECUTERSP=%d,%d,%d",onenet_device_table.instance,msgid,result)!=RT_EOK) return RT_ERROR;	
 			
 			return RT_EOK;	
@@ -1049,10 +1062,10 @@ int qsdk_onenet_clear_environment(void)
 {	
 	rt_memset(&onenet_device_table,0,sizeof(onenet_device_table));		 	//清空数据流结构体
 	rt_memset(&onenet_stream_table,0,sizeof(onenet_stream_table));		 	//清空数据流结构体
-
+	LOG_D("qsdk onenet environment clear success\n");
 	return RT_EOK;
 }
-#if	(defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)
+#if	(defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)||	(defined QSDK_USING_M5311)
 /****************************************************
 * 函数名称： qsdk_onenet_notify_and_ack
 *
@@ -1068,7 +1081,7 @@ int qsdk_onenet_notify_and_ack(qsdk_onenet_stream_t stream,int len,qsdk_onenet_v
 	//发送 AT 命令上报数据到 onenet 平台
 	if(stream->valuetype==qsdk_onenet_value_string||stream->valuetype==qsdk_onenet_value_opaque||stream->valuetype==qsdk_onenet_value_hexStr)
 	{
-		LOG_D("AT+MIPLNOTIFY=%d,%d,%d,%d,%d,%d,%d,\"%s\",0,%d,%d\r\n",onenet_device_table.instance,stream->msgid,stream->objid,\
+		LOG_D("AT+MIPLNOTIFY=%d,%d,%d,%d,%d,%d,%d,\"%s\",0,%d,%d\n",onenet_device_table.instance,stream->msgid,stream->objid,\
 			stream->insid,stream->resid,stream->valuetype,len,&data->string_value,flge,onenet_device_table.notify_ack);
 
 		if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLNOTIFY=%d,%d,%d,%d,%d,%d,%d,\"%s\",0,%d,%d",onenet_device_table.instance,\
@@ -1078,7 +1091,7 @@ int qsdk_onenet_notify_and_ack(qsdk_onenet_stream_t stream,int len,qsdk_onenet_v
 	}		
 	else if(stream->valuetype==qsdk_onenet_value_integer)
 	{
-		LOG_D("AT+MIPLNOTIFY=%d,%d,%d,%d,%d,%d,1,\"%d\",0,%d,%d\r\n",onenet_device_table.instance,stream->msgid,stream->objid,\
+		LOG_D("AT+MIPLNOTIFY=%d,%d,%d,%d,%d,%d,1,\"%d\",0,%d,%d\n",onenet_device_table.instance,stream->msgid,stream->objid,\
 			stream->insid,stream->resid,stream->valuetype,data->int_value,flge,onenet_device_table.notify_ack);
 
 		if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLNOTIFY=%d,%d,%d,%d,%d,%d,1,\"%d\",0,%d,%d",onenet_device_table.instance,\
@@ -1088,7 +1101,7 @@ int qsdk_onenet_notify_and_ack(qsdk_onenet_stream_t stream,int len,qsdk_onenet_v
 	}
 	else if(stream->valuetype==qsdk_onenet_value_float)
 	{
-		LOG_D("AT+MIPLNOTIFY=%d,%d,%d,%d,%d,%d,1,\"%f\",0,%d,%d\r\n",onenet_device_table.instance,stream->msgid,stream->objid,\
+		LOG_D("AT+MIPLNOTIFY=%d,%d,%d,%d,%d,%d,1,\"%f\",0,%d,%d\n",onenet_device_table.instance,stream->msgid,stream->objid,\
 			stream->insid,stream->resid,stream->valuetype,data->float_value,flge,onenet_device_table.notify_ack);
 
 		if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLNOTIFY=%d,%d,%d,%d,%d,%d,1,\"%f\",0,%d,%d",onenet_device_table.instance,\
@@ -1097,10 +1110,10 @@ int qsdk_onenet_notify_and_ack(qsdk_onenet_stream_t stream,int len,qsdk_onenet_v
 	}
 	else if(stream->valuetype==qsdk_onenet_value_bool)
 	{
-		LOG_D("AT+MIPLNOTIFY=%d,%d,%d,%d,%d,%d,1,\"%f\",0,%d,%d\r\n",onenet_device_table.instance,stream->msgid,stream->objid,\
+		LOG_D("AT+MIPLNOTIFY=%d,%d,%d,%d,%d,%d,1,\"%d\",0,%d,%d\n",onenet_device_table.instance,stream->msgid,stream->objid,\
 			stream->insid,stream->resid,stream->valuetype,data->bool_value,flge,onenet_device_table.notify_ack);			
 
-		if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLNOTIFY=%d,%d,%d,%d,%d,%d,1,\"%f\",0,%d,%d",onenet_device_table.instance,\
+		if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLNOTIFY=%d,%d,%d,%d,%d,%d,1,\"%d\",0,%d,%d",onenet_device_table.instance,\
 			stream->msgid,stream->objid,stream->insid,stream->resid,stream->valuetype,data->bool_value,flge,onenet_device_table.notify_ack)!=RT_EOK)   
 		return RT_ERROR;
 	}
@@ -1112,14 +1125,14 @@ int qsdk_onenet_notify_and_ack(qsdk_onenet_stream_t stream,int len,qsdk_onenet_v
 	}
 	if(status==event_notify_fail)
 	{
-		LOG_E("ack notify to onenet failure, objectid:%d 	instanceid:%d 	resourceid:%d		msgid:%d\r\n",stream->objid,\
+		LOG_E("ack notify to onenet failure, objectid:%d 	instanceid:%d 	resourceid:%d		msgid:%d\n",stream->objid,\
 		stream->insid,stream->resid,stream->msgid);
 		onenet_device_table.notify_status=qsdk_onenet_status_init;
 		return RT_ERROR;
 	}		
 	
 #ifdef QSDK_USING_DEBUG 
-	LOG_D("ack notify to onenet success, objectid:%d 	instanceid:%d 	resourceid:%d		msgid:%d\r\n",stream->objid,stream->insid,stream->resid,stream->msgid);
+	LOG_D("ack notify to onenet success, objectid:%d 	instanceid:%d 	resourceid:%d		msgid:%d\n",stream->objid,stream->insid,stream->resid,stream->msgid);
 #endif
 	//将当前设备数据流的上报状态设为初始化
 	onenet_device_table.notify_status=qsdk_onenet_status_init;
@@ -1316,24 +1329,24 @@ void onenet_event_func(char *event)
 					onenet_device_table.event_status=qsdk_onenet_status_run;			 
 				break;
 			case  3:
-					LOG_E("Bootstrap failure/连接LWM2M引导机失败\r\n");	
+					LOG_E("Bootstrap failure/连接LWM2M引导机失败\n");	
 					onenet_device_table.event_status=qsdk_onenet_status_failure;
 					rt_event_send(nb_event,event_bootstrap_fail);
 				break;
 			case  4:
 #ifdef QSDK_USING_DEBUG 
-					LOG_D("Connect success\r\n");
+					LOG_D("Connect success\n");
 #endif
 					onenet_device_table.event_status=qsdk_onenet_status_run;			
 				break;
 			case  5:
-					LOG_E("Connect failure\r\n");
+					LOG_E("Connect failure\n");
 					onenet_device_table.event_status=qsdk_onenet_status_failure;
 					rt_event_send(nb_event,event_connect_fail);
 				break;
 			case  6:
 #ifdef QSDK_USING_DEBUG 
-					LOG_D("Reg onenet success\r\n"); 
+					LOG_D("Reg onenet success\n"); 
 #endif
 					onenet_device_table.event_status=qsdk_onenet_status_success;
 					rt_event_send(nb_event,event_reg_success);			
@@ -1341,54 +1354,54 @@ void onenet_event_func(char *event)
 			case  7:
 					if(onenet_device_table.event_status!=qsdk_onenet_status_failure)
 					{
-						LOG_E("onenet 平台登陆失败  设备未在平台注册或者在平台填写了Auth_Code，需要清空 Auth_Code 信息");
+						LOG_E("onenet 平台登陆失败  设备未在平台注册或者在平台填写了Auth_Code，需要清空 Auth_Code 信息\n");
 						onenet_device_table.event_status=qsdk_onenet_status_failure;
 						rt_event_send(nb_event,event_reg_fail);	
 					}						
 				break;
 			case  8:
 #ifdef QSDK_USING_DEBUG 
-					LOG_D("Reg onenet timeout\r\n");
+					LOG_D("Reg onenet timeout\n");
 #endif
 					onenet_device_table.event_status=qsdk_onenet_status_failure;	
 					rt_event_send(nb_event,event_reg_timeout);	
 				break;
 			case  9:
 #ifdef QSDK_USING_DEBUG 
-					LOG_D("Life_time timeout\r\n");
+					LOG_D("Life_time timeout\n");
 #endif			
 				break;
 			case 10:
 #ifdef QSDK_USING_DEBUG 
-					LOG_D("Status halt\r\n"); 
+					LOG_D("Status halt\n"); 
 #endif
 				break;
 			case 11:
 #ifdef QSDK_USING_DEBUG 
-					LOG_D("Update success\r\n");
+					LOG_D("Update success\n");
 #endif			
 					onenet_device_table.update_time=qsdk_onenet_status_update_success;
 					rt_event_send(nb_event,event_update_success);
 				break;
 			case 12:
-					LOG_E("Update failure\r\n"); 
+					LOG_E("Update failure\n"); 
 					onenet_device_table.update_time=qsdk_onenet_status_update_failure;
 					rt_event_send(nb_event,event_update_fail);
 				break;
 			case 13:
-					LOG_E("Update timeout\r\n"); 
+					LOG_E("Update timeout\n"); 
 					onenet_device_table.update_time=qsdk_onenet_status_update_timeout;
 					rt_event_send(nb_event,event_update_timeout);
 				break;
 			case 14:
 #ifdef QSDK_USING_DEBUG 
-					LOG_D("Update need\r\n");
+					LOG_D("Update need\n");
 #endif
 					onenet_device_table.update_time=qsdk_onenet_status_update_need;
 				break;
 			case 15:
 #ifdef QSDK_USING_DEBUG 
-					LOG_D("Unreg success\r\n"); 
+					LOG_D("Unreg success\n"); 
 #endif
 					onenet_device_table.connect_status=qsdk_onenet_status_failure;
 					if(onenet_device_table.close_status==qsdk_onenet_status_close_start)
@@ -1400,58 +1413,58 @@ void onenet_event_func(char *event)
 					{
 						if(qsdk_onenet_close_callback()!=RT_EOK)
 						{
-							LOG_E("close onenet instance failure\r\n");
+							LOG_E("close onenet instance failure\n");
 						}
 					}	
 				break;
 			case 20:
-					LOG_E("Response failure\r\n");
+					LOG_E("Response failure\n");
 				break;
 			case 21:
 #ifdef QSDK_USING_DEBUG 
-					LOG_D("Response success\r\n"); 
+					LOG_D("Response success\n"); 
 #endif
 				break;
 			case 25:
-					LOG_E("Notify failure\r\n"); 
+					LOG_E("Notify failure\n"); 
 					onenet_device_table.notify_status=qsdk_onenet_status_failure;
 					rt_event_send(nb_event,event_notify_fail);
 				break;
 			case 26:
 #ifdef QSDK_USING_DEBUG 
-					LOG_D("Notify success\r\n"); 
+					LOG_D("Notify success\n"); 
 #endif
 					onenet_device_table.notify_status=qsdk_onenet_status_success;
 					rt_event_send(nb_event,event_notify_success);
 				break;
 			case 40:
 #ifdef QSDK_USING_DEBUG 
-					LOG_D("enter onenet fota down start\r\n"); 
+					LOG_D("enter onenet fota down start\n"); 
 #endif
 				break;
 			case 41:
-					LOG_E("onenet fota down fail\r\n"); 
+					LOG_E("onenet fota down fail\n"); 
 				break;
 			case 42:
 #ifdef QSDK_USING_DEBUG 
-					LOG_D("onenet fota down success\r\n"); 
+					LOG_D("onenet fota down success\n"); 
 #endif
 				break;
 			case 43:
-					LOG_D("onenet enter fotaing \r\n");
+					LOG_D("onenet enter fotaing \n");
 			
 				break;
 			case 44:
-					LOG_D("onenet fota success\r\n"); 
+					LOG_D("onenet fota success\n"); 
 				break;
 			case 45:
-					LOG_E("onenet fota failure\r\n"); 
+					LOG_E("onenet fota failure\n"); 
 				break;				
 			case 46:
-					LOG_D("onenet fota update success\r\n"); 
+					LOG_D("onenet fota update success\n"); 
 				break;
 			case 47:
-					LOG_E("onenet fota event interrupt failure\r\n"); 
+					LOG_E("onenet fota event interrupt failure\n"); 
 				break;
 			default:break;
 		}
@@ -1459,7 +1472,7 @@ void onenet_event_func(char *event)
 	//判断是否为 onenet 平台 read 事件
 	else if(rt_strstr(event,"+MIPLREAD:")!=RT_NULL)
 	{
-		LOG_D("%s\r\n",event);
+		LOG_D("%s\n",event);
 		result=strtok((char *)event,":");
 		instance=strtok(NULL,",");
 		msgid=strtok(NULL,",");
@@ -1469,7 +1482,7 @@ void onenet_event_func(char *event)
 		
 		//进入 onenet read 响应函数
 		if(onenet_read_rsp(atoi(msgid),atoi(objectid),atoi(instanceid),atoi(resourceid))!=RT_EOK)
-			LOG_E("rsp onener read failure\r\n");
+			LOG_E("rsp onener read failure\n");
 	}
 	//判断是否为 onenet write 事件
 	else if(rt_strstr(event,"+MIPLWRITE:")!=RT_NULL)
@@ -1478,7 +1491,7 @@ void onenet_event_func(char *event)
 		char *value_len=NULL;
 		char *value=NULL;
 		char *flge=NULL;
-		LOG_D("%s\r\n",event);
+		LOG_D("%s\n",event);
 		result=strtok(event,":");
 		instance=strtok(NULL,",");
 		msgid=strtok(NULL,",");
@@ -1494,7 +1507,7 @@ void onenet_event_func(char *event)
 		{
 			//执行 onenet write 响应函数
 			if(onenet_write_rsp(atoi(msgid),atoi(objectid),atoi(instanceid),atoi(resourceid),atoi(valuetype),atoi(value_len),value)!=RT_EOK)
-				LOG_E("rsp onenet write failure\r\n");
+				LOG_E("rsp onenet write failure\n");
 		}			
 	}
 	//判断是否为 exec 事件
@@ -1502,7 +1515,7 @@ void onenet_event_func(char *event)
 	{	
 		char *value_len=NULL;
 		char *value=NULL;
-		LOG_D("%s\r\n",event);
+		LOG_D("%s\n",event);
 		result=strtok((char *)event,":");
 		instance=strtok(NULL,",");
 		msgid=strtok(NULL,",");
@@ -1513,19 +1526,14 @@ void onenet_event_func(char *event)
 		value=strtok(NULL,",");
 		//执行 onenet exec 响应函数
 		if(onenet_execute_rsp(atoi(msgid),atoi(objectid),atoi(instanceid),atoi(resourceid),atoi(value_len),value)!=RT_EOK)
-			LOG_E("rsp onenet execute failure\r\n");
+			LOG_E("rsp onenet execute failure\n");
 	}
 	//判断是否为 observe 事件
 	else if(rt_strstr(event,"+MIPLOBSERVE:")!=RT_NULL)
 	{	
 		char *oper=RT_NULL;
 		int i=0;
-		LOG_D("%s\r\n",event);
-		if(onenet_device_table.observercount==0)
-		{
-			onenet_device_table.observer_status=qsdk_onenet_status_run;
-			rt_event_send(nb_event,event_observer_run);
-		}
+		LOG_D("%s\n",event);
 		onenet_device_table.observercount++;
 
 		result=strtok((char *)event,":");
@@ -1541,22 +1549,23 @@ void onenet_event_func(char *event)
 				{
 					onenet_stream_table[i].msgid=atoi(msgid);			
 #ifdef QSDK_USING_DEBUG
-					LOG_D("objece=%d,instanceid=%d msg=%d\r\n",onenet_stream_table[i].objid,onenet_stream_table[i].insid,\
+					LOG_D("objece=%d,instanceid=%d msg=%d\n",onenet_stream_table[i].objid,onenet_stream_table[i].insid,\
 					onenet_stream_table[i].msgid);
 #endif					
 				}
 			}
 
 #ifdef QSDK_USING_DEBUG
-		LOG_D("observercount=%d\r\n",onenet_device_table.observercount);
+		LOG_D("observercount=%d\n",onenet_device_table.observercount);
 #endif
 		//判断 obcerve 事件是否执行完成
 		if(onenet_device_table.observercount==onenet_device_table.objcount)
 		{
 			//observe 事件执行完成
+			onenet_device_table.observercount=0;
 			onenet_device_table.observer_status=qsdk_onenet_status_success;
 #ifdef QSDK_USING_DEBUG
-			LOG_D("observer success\r\n ");
+			LOG_D("observer success\n ");
 #endif
 			rt_event_send(nb_event,event_observer_success);
 		}
@@ -1566,13 +1575,14 @@ void onenet_event_func(char *event)
 	{
 		char resourcemap[50]="";
 		int str[50];
-		int i=0,j=0,status=1,resourcecount=0;
-		LOG_D("%s\r\n",event);
+		LOG_D("%s\n",event);
 		result=strtok((char *)event,":");
 		instance=strtok(NULL,",");
 		msgid=strtok(NULL,",");
 		objectid=strtok(NULL,",");
 		
+#ifdef QSDK_USING_ME3616		
+		int i=0,j=0,status=1,resourcecount=0;
 		//循环检测设备总数据流
 		for(;i<onenet_device_table.dev_len;i++)
 			{
@@ -1611,23 +1621,18 @@ void onenet_event_func(char *event)
 			j=0;
 			//循环打印已经记录的 resourceid
 			for(;j<resourcecount;j++)
-			LOG_D("resourcecount=%d\r\n",str[j]);
+			LOG_D("resourcecount=%d\n",str[j]);
 
 			//打印 resourceid map
 			LOG_D("map=%s\r\n",resourcemap);
 #endif
-#ifdef QSDK_USING_ME3616
-				LOG_D("AT+MIPLDISCOVERRSP=%d,%d,1,%d,\"%s\"\r\n",onenet_device_table.instance,atoi(msgid),strlen(resourcemap),resourcemap);
+				LOG_D("AT+MIPLDISCOVERRSP=%d,%d,1,%d,\"%s\"\n",onenet_device_table.instance,atoi(msgid),strlen(resourcemap),resourcemap);
 				if(at_obj_exec_cmd(nb_client,nb_resp,"AT+MIPLDISCOVERRSP=%d,%d,1,%d,\"%s\"",onenet_device_table.instance,atoi(msgid),strlen(resourcemap),resourcemap)!=RT_EOK)
 				{
-					LOG_E("+MIPLDISCOVERRSP  failure \r\n");
+					LOG_E("+MIPLDISCOVERRSP  failure \n");
 				}	
 #endif
-		if(onenet_device_table.discovercount==0)
-		{
-			onenet_device_table.discover_status=qsdk_onenet_status_run;
-			rt_event_send(nb_event,event_discover_run);
-		}
+
 		onenet_device_table.discovercount++;
 		onenet_device_table.discover_status=qsdk_onenet_status_run;
 		
@@ -1637,9 +1642,10 @@ void onenet_event_func(char *event)
 		{	
 			//discover 事件已经完成
 #ifdef QSDK_USING_DEBUG
-			LOG_D("onenet discover success\r\n");			
+			LOG_D("discover success\n");			
 #endif
 			//onenet 连接成功
+			onenet_device_table.discovercount=0;
 			onenet_device_table.discover_status=qsdk_onenet_status_success;
 			onenet_device_table.connect_status=qsdk_onenet_status_success;
 			rt_event_send(nb_event,event_discover_success);
@@ -1648,4 +1654,256 @@ void onenet_event_func(char *event)
 }
 
 INIT_APP_EXPORT(qsdk_onenet_init_environment);
+
+#ifdef QSDK_USING_FINSH_CMD
+
+void qsdk_onenet(int argc,char**argv)
+{
+	qsdk_onenet_stream_t client;
+	rt_uint16_t i;
+    if (argc > 1)
+    {
+			if (!strcmp(argv[1], "quick_start"))
+			{
+				//nb-iot模块快速连接到onenet
+				qsdk_onenet_quick_start();
+			}
+			else if (!strcmp(argv[1], "object_init"))
+			{
+				if(argc>9)
+				{
+					if(!strcmp(argv[9], "string"))
+					{
+						client=qsdk_onenet_object_init(atoi(argv[2]),atoi(argv[3]),atoi(argv[4]),atoi(argv[5]),argv[6],atoi(argv[7]),atoi(argv[8]),qsdk_onenet_value_string);	
+					}
+					else if(!strcmp(argv[9], "opaque"))
+					{
+						client=qsdk_onenet_object_init(atoi(argv[2]),atoi(argv[3]),atoi(argv[4]),atoi(argv[5]),argv[6],atoi(argv[7]),atoi(argv[8]),qsdk_onenet_value_opaque);
+					}
+					else if(!strcmp(argv[9], "int"))
+					{
+						client=qsdk_onenet_object_init(atoi(argv[2]),atoi(argv[3]),atoi(argv[4]),atoi(argv[5]),argv[6],atoi(argv[7]),atoi(argv[8]),qsdk_onenet_value_integer);
+					}
+					else if(!strcmp(argv[9], "float"))
+					{
+						client=qsdk_onenet_object_init(atoi(argv[2]),atoi(argv[3]),atoi(argv[4]),atoi(argv[5]),argv[6],atoi(argv[7]),atoi(argv[8]),qsdk_onenet_value_float);
+					}
+					else if(!strcmp(argv[9], "bool"))
+					{
+						client=qsdk_onenet_object_init(atoi(argv[2]),atoi(argv[3]),atoi(argv[4]),atoi(argv[5]),argv[6],atoi(argv[7]),atoi(argv[8]),qsdk_onenet_value_bool);
+					}
+					else if(!strcmp(argv[9], "hexstr"))
+					{
+						client=qsdk_onenet_object_init(atoi(argv[2]),atoi(argv[3]),atoi(argv[4]),atoi(argv[5]),argv[6],atoi(argv[7]),atoi(argv[8]),qsdk_onenet_value_hexStr);
+					}
+					if(!strcmp(argv[9], "string")||!strcmp(argv[9], "opaque")||!strcmp(argv[9], "int")||!strcmp(argv[9], "float")||!strcmp(argv[9], "bool")||!strcmp(argv[9], "hexstr"))
+					{
+						if(client!=RT_NULL)
+						{
+							for(i=0;i<QSDK_ONENET_OBJECT_MAX_NUM;i++)
+							{
+								if(&onenet_stream_table[i]==client)
+								{
+									rt_kprintf("this onenet client id is:%d\n",i);
+									break;
+								}	
+							}
+						}
+					}
+					else rt_kprintf("Value type error, please enter string、opaque、int、float、bool、hexstr.\n");					
+				}
+				else
+				{
+					rt_kprintf("qsdk_onenet object_init <objid> <insid> <resid> <inscount> <bitmap> <atts> <acts> <value_type>             - Please enter the correct command\n");
+				}
+			}
+			else if (!strcmp(argv[1], "delete_ins"))
+			{
+				if(qsdk_onenet_delete_instance()==RT_EOK)
+					rt_kprintf("onenet delete instance success\n");
+			}
+			else if (!strcmp(argv[1], "delete_object"))
+			{
+				if(argc>2)
+				{
+					if(onenet_stream_table[atoi(argv[2])].user_status)
+					{
+						if(qsdk_onenet_delete_object(&onenet_stream_table[atoi(argv[2])])!=RT_EOK)
+							rt_kprintf("onenet delete object error\n");
+						else rt_kprintf("onenet delete object success\n");
+					}
+					else rt_kprintf("This id is error\n");
+				}
+				else
+				{
+					rt_kprintf("qsdk_onenet delete_object <id>            -  Do you need to delete the object? Please enter id.\n");
+				}
+			}
+			else if (!strcmp(argv[1], "open"))
+			{
+				qsdk_onenet_open();
+			}
+			else if (!strcmp(argv[1], "close"))
+			{
+				if(qsdk_onenet_close()==RT_EOK)
+					rt_kprintf("onenet close success\n");
+			}
+			else if (!strcmp(argv[1], "update_time"))
+			{
+				if(argc>2)
+				{
+					if(qsdk_onenet_update_time(atoi(argv[2]))!=RT_EOK)
+						rt_kprintf("onenet update time error\n");
+					else rt_kprintf("onenet update time success\n");
+				}
+				else
+				{
+					rt_kprintf("qsdk_onenet update_time <0 or 1>            -  Do you need to update the object? Please enter 0 or 1.\n");
+				}
+			}
+			else if (!strcmp(argv[1], "notify"))
+			{
+				if(argc>5)
+				{
+					if(onenet_stream_table[atoi(argv[2])].user_status)
+					{
+						client=&onenet_stream_table[atoi(argv[2])];
+						if(client->valuetype==qsdk_onenet_value_string)
+						{
+							if(qsdk_onenet_notify(client,atoi(argv[3]),(qsdk_onenet_value_t)argv[4],atoi(argv[5]))==RT_EOK)
+								rt_kprintf("net data send success\n");
+						}
+						else if(client->valuetype==qsdk_onenet_value_opaque)
+						{
+							if(qsdk_onenet_notify(client,atoi(argv[3]),(qsdk_onenet_value_t)argv[4],atoi(argv[5]))==RT_EOK)
+								rt_kprintf("net data send success\n");
+						}
+						else if(client->valuetype==qsdk_onenet_value_integer)
+						{
+							int value_int=atoi(argv[4]);
+							if(qsdk_onenet_notify(client,0,(qsdk_onenet_value_t)&value_int,atoi(argv[5]))==RT_EOK)
+								rt_kprintf("net data send success\n");
+						}
+						else if(client->valuetype==qsdk_onenet_value_float)
+						{
+							float value_float=atof(argv[4]);
+							LOG_D("%f\n",value_float);
+							if(qsdk_onenet_notify(client,0,(qsdk_onenet_value_t)&value_float,atoi(argv[5]))==RT_EOK)
+								rt_kprintf("net data send success\n");
+						}
+						else if(client->valuetype==qsdk_onenet_value_bool)
+						{
+							int value_bool=atoi(argv[4]);
+							if(qsdk_onenet_notify(client,0,(qsdk_onenet_value_t)&value_bool,atoi(argv[5]))==RT_EOK)
+								rt_kprintf("net data send success\n");
+						}
+						else if(client->valuetype==qsdk_onenet_value_hexStr)
+						{
+							if(qsdk_onenet_notify(client,atoi(argv[3]),(qsdk_onenet_value_t)argv[4],atoi(argv[5]))==RT_EOK)
+								rt_kprintf("net data send success\n");
+						}
+
+					}
+					else rt_kprintf("This id is error\n");				
+				}
+				else
+				{
+					rt_kprintf("qsdk_onenet notify <id> <len> <data> <flge>                  - Please enter the correct command\n");
+				}
+			}
+#if	(defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)||	(defined QSDK_USING_M5311)
+			else if (!strcmp(argv[1], "notify_ack"))
+			{
+				if(argc>5)
+				{
+					if(onenet_stream_table[atoi(argv[2])].user_status)
+					{
+						client=&onenet_stream_table[atoi(argv[2])];
+						if(client->valuetype==qsdk_onenet_value_string)
+						{
+							if(qsdk_onenet_notify_and_ack(client,atoi(argv[3]),(qsdk_onenet_value_t)argv[4],atoi(argv[5]))==RT_EOK)
+								rt_kprintf("net data send success\n");
+						}
+						else if(client->valuetype==qsdk_onenet_value_opaque)
+						{
+							if(qsdk_onenet_notify_and_ack(client,atoi(argv[3]),(qsdk_onenet_value_t)argv[4],atoi(argv[5]))==RT_EOK)
+								rt_kprintf("net data send success\n");
+						}
+						else if(client->valuetype==qsdk_onenet_value_integer)
+						{
+							int value_int=atoi(argv[4]);
+							if(qsdk_onenet_notify_and_ack(client,0,(qsdk_onenet_value_t)&value_int,atoi(argv[5]))==RT_EOK)
+								rt_kprintf("net data send success\n");
+						}
+						else if(client->valuetype==qsdk_onenet_value_float)
+						{
+							float value_float=atof(argv[4]);
+							LOG_D("%f\n",value_float);
+							if(qsdk_onenet_notify_and_ack(client,0,(qsdk_onenet_value_t)&value_float,atoi(argv[5]))==RT_EOK)
+								rt_kprintf("net data send success\n");
+						}
+						else if(client->valuetype==qsdk_onenet_value_bool)
+						{
+							int value_bool=atoi(argv[4]);
+							if(qsdk_onenet_notify_and_ack(client,0,(qsdk_onenet_value_t)&value_bool,atoi(argv[5]))==RT_EOK)
+								rt_kprintf("net data send success\n");
+						}
+						else if(client->valuetype==qsdk_onenet_value_hexStr)
+						{
+							if(qsdk_onenet_notify_and_ack(client,atoi(argv[3]),(qsdk_onenet_value_t)argv[4],atoi(argv[5]))==RT_EOK)
+								rt_kprintf("net data send success\n");
+						}
+
+					}
+					else rt_kprintf("This id is error\n");				
+				}
+				else
+				{
+					rt_kprintf("qsdk_onenet notify_ack <id> <len> <data> <flge>                  - Please enter the correct command\n");
+				}
+			}
+#endif
+			else if (!strcmp(argv[1], "list"))
+			{
+				int i;
+				for(i=0;i<QSDK_ONENET_OBJECT_MAX_NUM;i++)
+				{
+					rt_kprintf("client:%d  user_status:%d, objid=%d, insid=%d, resid=%d, inscount=%d, bitmap=%s, valuetype=%d\n",i,onenet_stream_table[i].user_status,onenet_stream_table[i].objid,onenet_stream_table[i].insid,onenet_stream_table[i].resid,onenet_stream_table[i].inscount,onenet_stream_table[i].bitmap,onenet_stream_table[i].valuetype);
+				}
+			}
+			else if (!strcmp(argv[1], "clear"))
+			{
+				qsdk_onenet_clear_environment();
+			}
+			else
+			{
+					rt_kprintf("Unknown command. Please enter 'qsdk_onenet' for help\n");
+			}
+    }
+    else
+    {
+      rt_kprintf("Usage:\n");
+			rt_kprintf("qsdk_onenet object_init <objid> <insid> <resid> <inscount> <bitmap> <atts> <acts> <value_type>   - Init a lwm2m object\n");
+			rt_kprintf("qsdk_onenet quick_start                                      - Fast connect to onenet\n");
+			rt_kprintf("qsdk_onenet delete_ins                                       - Delete lwm2m instance\n");
+			rt_kprintf("qsdk_onenet delete_object <id>                               - Delete lwm2m object\n");
+			rt_kprintf("qsdk_onenet open                                             - Log in to onenet\n");
+			rt_kprintf("qsdk_onenet close                                            - Log off on onenet\n");
+			rt_kprintf("qsdk_onenet update_time <0 or 1>                             - Update online time\n");
+			rt_kprintf("qsdk_onenet notify <id> <len> <data> <flge>                  - notify data to onenet\n");
+#if	(defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)||	(defined QSDK_USING_M5311)
+			rt_kprintf("qsdk_onenet notify_ack <id> <len> <data> <flge>              - notify data to onenet\n");
+#endif
+			rt_kprintf("qsdk_onenet list                                             - Display a list of onenet object clients\n");
+			rt_kprintf("qsdk_onenet clear                                            - Clear the onenet object client list\n");
+    }
+
+		
+		
+}
+
+
+MSH_CMD_EXPORT(qsdk_onenet, qsdk onenet function);
+#endif // QSDK_USING_FINSH_CMD
+
 #endif
