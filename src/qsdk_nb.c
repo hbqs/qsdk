@@ -13,6 +13,7 @@
  * 2019-06-13     longmain     add hexstring to string
  * 2019-06-13     longmain     qsdk environment is auto init by the system app
  * 2019-06-30     longmain     add qsdk_nb_clear_environment
+ * 2019-08-30     longmain     Adding PSM support function
  */
 
 #include "qsdk.h"
@@ -40,15 +41,19 @@
 #endif
 
 //设置event事件
-#define EVENT_REBOOT 						(0x99<<1)
-#define EVENT_PSM_UNLOOK_AT		 	(0x98<<1)
-#define EVENT_EXIT_PSM 					(0x97<<1)
-#define EVENT_PING_OK						(0x96<<1)
-#define EVENT_PING_ERROR				(0x95<<1)
+#define EVENT_REBOOT 						(1<< 1)
+#define EVENT_PSM_UNLOOK_AT		 	(1<< 2)
+#define EVENT_ENTER_PSM 				(1<< 3)
+#define EVENT_EXIT_PSM 					(1<< 4)
+#define EVENT_EXIT_PSM_REBOOT 	(1<< 5)
+#define EVENT_ENTER_RUN 			  (1<< 6)
+#define EVENT_PING_OK						(1<< 7)
+#define EVENT_PING_ERROR				(1<< 8)
 
 
 //引用业务处理函数
 #ifdef QSDK_USING_NET
+extern int qsdk_net_clear_environment(void);
 extern void net_event_func(char *event);
 #endif
 
@@ -58,6 +63,8 @@ extern void iot_event_func(char *event);
 			
 #ifdef QSDK_USING_ONENET
 extern void onenet_event_func(char *event);
+extern int qsdk_onenet_clear_environment(void);
+
 #endif
 
 #ifdef QSDK_USING_MQTT
@@ -97,7 +104,7 @@ at_response_t nb_resp=RT_NULL;
 
 //定义任务控制块
 rt_thread_t qsdk_thread_id=RT_NULL;
-
+rt_thread_t qsdk_psm_id=RT_NULL;
 
 //声明 函数
 void qsdk_thread_entry(void* parameter);
@@ -110,7 +117,7 @@ rt_event_t nb_event=RT_NULL;
 
 static struct nb_pin_mode nb_pin={0};
 struct nb_device nb_device_table={0};
-
+static 	int  nbiot_psm_status=0;
 
 /*************************************************************
 *	函数名称：	nb_io_init
@@ -259,28 +266,15 @@ int qsdk_nb_wait_connect(void)
 *************************************************************/
 int qsdk_nb_sim_check(void)
 {
+#if (defined QSDK_USING_DEBUG)
+	LOG_D("AT+CFUN?\n");
+#endif
 	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+CFUN?")!=RT_EOK)	return RT_ERROR;
 	at_resp_parse_line_args(nb_resp,2,"+CFUN:%d",&nb_device_table.sim_state);
 
 	return  RT_EOK;
 }
-/*************************************************************
-*	函数名称：	nb_set_psm_mode
-*
-*	函数功能：	模块 PSM 模式设置
-*
-*	入口参数：	tau_time	TAU 时间		active_time active时间
-*
-*	返回参数：	0:成功  1:失败
-*
-*	说明：		
-*************************************************************/
-int qsdk_nb_set_psm_mode(char *tau_time,char *active_time)
-{
-	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+CPSMS=1,,,\"%s\",\"%s\"",tau_time,active_time)!=RT_EOK)	return RT_ERROR;	
 
-	return  RT_EOK;
-}
 /*************************************************************
 *	函数名称：	nb_get_imsi
 *
@@ -294,6 +288,9 @@ int qsdk_nb_set_psm_mode(char *tau_time,char *active_time)
 *************************************************************/
 char *qsdk_nb_get_imsi(void)
 {
+#if (defined QSDK_USING_DEBUG)
+	LOG_D("AT+CIMI\n");
+#endif
 	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+CIMI")!=RT_EOK)	return RT_NULL;	
 	
 	at_resp_parse_line_args(nb_resp,2,"%s\r\n",nb_device_table.imsi);
@@ -312,6 +309,9 @@ char *qsdk_nb_get_imsi(void)
 *************************************************************/
 char *qsdk_nb_get_imei(void)
 {
+#if (defined QSDK_USING_DEBUG)
+	LOG_D("AT+CGSN=1\n");
+#endif
 	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+CGSN=1")!=RT_EOK)	return RT_NULL;	
 	
 	at_resp_parse_line_args(nb_resp,2,"+CGSN:%s",nb_device_table.imei);
@@ -356,10 +356,14 @@ static void qsdk_nb_set_rtc_time(int year,int month,int day,int hour,int min,int
    		}
    	}	
 		week=(day+2*month+3*(month+1)/5+year+year/4-year/100+year/400)%7+1;
-
-		LOG_D("当前时间:%d-%d-%d,%d-%d-%d,星期:%d\n",year+2000,month,day,hour,min,sec,week);
+#ifndef QSDK_USING_ME3616
+		year+=2000;
+#endif
 		
-		qsdk_rtc_set_time_callback(year+2000,month,day,hour,min,sec,week);
+#ifdef QSDK_USING_LOG
+		LOG_D("当前时间:%d-%d-%d,%d-%d-%d,星期:%d\n",year,month,day,hour,min,sec,week);
+#endif	
+		qsdk_rtc_set_time_callback(year,month,day,hour,min,sec,week);
 
 }
 /*************************************************************
@@ -376,6 +380,9 @@ static void qsdk_nb_set_rtc_time(int year,int month,int day,int hour,int min,int
 int qsdk_nb_get_time(void)
 {
 	int year,mouth,day,hour,min,sec;
+#if (defined QSDK_USING_DEBUG)
+	LOG_D("AT+CCLK?\n");
+#endif
 	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+CCLK?")!=RT_EOK)	return RT_ERROR;	
 	
 	at_resp_parse_line_args(nb_resp,2,"+CCLK:%d/%d/%d,%d:%d:%d+",&year,&mouth,&day,&hour,&min,&sec);
@@ -397,6 +404,9 @@ int qsdk_nb_get_time(void)
 *************************************************************/
 int qsdk_nb_get_csq(void)
 {
+#if (defined QSDK_USING_DEBUG)
+	LOG_D("AT+CSQ\n");
+#endif
 	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+CSQ")!=RT_EOK)	return -1;	
 	
 	at_resp_parse_line_args(nb_resp,2,"+CSQ:%d\r\n",&nb_device_table.csq);
@@ -416,7 +426,10 @@ int qsdk_nb_get_csq(void)
 *************************************************************/
 int qsdk_nb_set_net_start(void)
 {
-	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+CGATT=1")!=RT_EOK)	return RT_ERROR;
+#if (defined QSDK_USING_DEBUG)
+	LOG_D("AT+CGATT=1\n");
+#endif
+	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+CGATT=1")!=RT_EOK)	return RT_ERROR;
 	
 	return  RT_EOK;
 }
@@ -434,6 +447,9 @@ int qsdk_nb_set_net_start(void)
 int qsdk_nb_get_net_connect(void)
 {
 	int i;
+#if (defined QSDK_USING_DEBUG)
+	LOG_D("AT+CEREG?\n");
+#endif
 	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+CEREG?")!=RT_EOK)
 	{
 		return  RT_ERROR;
@@ -485,6 +501,46 @@ int qsdk_nb_get_reboot_event(void)
 	else 		return 4;
 }
 /*************************************************************
+*	函数名称：	nb_set_psm_mode
+*
+*	函数功能：	模块 PSM 模式设置
+*
+*	入口参数：	tau_time	TAU 时间		active_time active时间
+*
+*	返回参数：	0:成功  1:失败
+*
+*	说明：		
+*************************************************************/
+int qsdk_nb_set_psm_mode(int mode,char *tau_time,char *active_time)
+{
+	if(mode==0)
+	{
+#if (defined QSDK_USING_DEBUG)
+	LOG_D("AT+CPSMS=0\n");
+#endif
+		if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+CPSMS=0")!=RT_EOK)	return RT_ERROR;		
+	}
+	else if(mode==1)
+	{
+#if (defined QSDK_USING_DEBUG)
+	LOG_D("AT+CPSMS=1,,,\"%s\",\"%s\"\n",tau_time,active_time);
+#endif
+		if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+CPSMS=1,,,\"%s\",\"%s\"",tau_time,active_time)!=RT_EOK)	return RT_ERROR;	
+#if (defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)
+		if(qsdk_nb_get_psm_status()!=RT_EOK)
+		{
+#if (defined QSDK_USING_DEBUG)
+			LOG_D("AT+CPSMS=0\n");
+#endif
+			if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+CPSMS=0")!=RT_EOK)	return RT_ERROR;	
+		}
+#endif
+	}
+
+
+	return  RT_EOK;
+}
+/*************************************************************
 *	函数名称：	qsdk_nb_enter_psm
 *
 *	函数功能：	nb-iot模块进入PSM模式
@@ -498,32 +554,36 @@ int qsdk_nb_get_reboot_event(void)
 void qsdk_nb_enter_psm(void)
 {
 	rt_uint32_t status;
-#ifdef QSDK_USING_LOG
-	LOG_D("nb-iot enter psm\n");
+#ifdef QSDK_USING_DEBUG
+	LOG_D("nb-iot will enter psm\n");
 #endif
-#ifdef QSDK_USING_ME3616
-	LOG_D("AT+ZSLR\r\n");
-	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+ZSLR")!=RT_EOK)
+#if (defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)
+	//开启PSM模式
+#if (defined QSDK_USING_DEBUG)
+	LOG_D("AT+CPSMS=1\n");
+#endif
+	at_obj_exec_cmd(nb_client,RT_NULL,"AT+CPSMS=1");	
+#elif QSDK_USING_ME3616
+#if (defined QSDK_USING_DEBUG)
+	LOG_D("AT+ZSLR\n");
+#endif
+	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+ZSLR")!=RT_EOK)
 		LOG_E("nb-iot set psm cmd error\n");
 #elif (defined QSDK_USING_M5311)
-	LOG_D("AT*ENTERSLEEP\r\n");
-	if(at_obj_exec_cmd(nb_client,nb_resp,"AT*ENTERSLEEP")!=RT_EOK)
+	qsdk_nb_open_auto_psm();
+#if (defined QSDK_USING_DEBUG)
+	LOG_D("AT*ENTERSLEEP\n");
+#endif
+	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT*ENTERSLEEP")!=RT_EOK)
 		LOG_E("nb-iot set psm cmd error\n");
 #endif
-	rt_mutex_take(nb_client->lock,RT_WAITING_FOREVER);
-	nb_device_table.psm_status=qsdk_nb_status_enter_psm;
-	if(rt_event_recv(nb_event,EVENT_PSM_UNLOOK_AT,RT_EVENT_FLAG_AND|RT_EVENT_FLAG_CLEAR,RT_WAITING_FOREVER,&status)!=RT_EOK)
-	{
-		LOG_E("nb-iot wait exit psm error\n");
-	}
-	rt_mutex_release(nb_client->lock);
-	if(rt_event_recv(nb_event,EVENT_EXIT_PSM,RT_EVENT_FLAG_AND|RT_EVENT_FLAG_CLEAR,RT_WAITING_FOREVER,&status)!=RT_EOK)
-	{
-		LOG_E("nb-iot wait exit psm error\n");
-	}
-#ifdef QSDK_USING_LOG
-	LOG_D("nb-iot exit psm\n");
-#endif
+		//等待退出PSM事件
+		if(rt_event_recv(nb_event,EVENT_ENTER_RUN,RT_EVENT_FLAG_AND|RT_EVENT_FLAG_CLEAR,RT_WAITING_FOREVER,&status)!=RT_EOK)
+		{
+			LOG_E("nb-iot wait exit psm error\n");
+		}
+		
+	LOG_I("nb-iot is exit psm mode\n");
 }
 
 /*************************************************************
@@ -539,21 +599,22 @@ void qsdk_nb_enter_psm(void)
 *************************************************************/
 int qsdk_nb_exit_psm(void)
 {
-	rt_event_send(nb_event,EVENT_PSM_UNLOOK_AT);
-#if	(defined QSDK_USING_M5311)||(defined QSDK_USING_ME3616)
-	if(nb_io_exit_psm()!=RT_EOK)
+#if (defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)
+	rt_event_send(nb_event,EVENT_EXIT_PSM);
+#elif	(defined QSDK_USING_M5311)||(defined QSDK_USING_ME3616)
+	if(nbiot_psm_status==qsdk_nb_status_enter_psm)
 	{
-		LOG_E("nb-iot exit psm error\n");
-		return RT_ERROR;
+		if(nb_io_exit_psm()!=RT_EOK)
+		{
+			LOG_E("nb-iot exit psm error\n");
+			return RT_ERROR;
+		}
+	}
+	else
+	{
+		rt_event_send(nb_event,EVENT_EXIT_PSM);
 	}
 #endif
-	if(qsdk_nb_wait_connect()!=RT_EOK)
-	{
-		LOG_E("nb-iot exit psm error\n");
-		return RT_ERROR;
-	}
-	nb_device_table.psm_status=qsdk_nb_status_exit_psm;
-	rt_event_send(nb_event,EVENT_EXIT_PSM);
 	return  RT_EOK;
 }
 /*************************************************************
@@ -569,10 +630,59 @@ int qsdk_nb_exit_psm(void)
 *************************************************************/
 int qsdk_nb_get_psm_status(void)
 {
-	if(nb_device_table.psm_status!=qsdk_nb_status_enter_psm)
+	if(nbiot_psm_status==qsdk_nb_status_exit_psm)
 	{
-		return	RT_ERROR;
+		return  RT_ERROR;
 	}
+	return  RT_EOK;
+}
+/*************************************************************
+*	函数名称：	nb_set_edrx_mode
+*
+*	函数功能：	模块 EDRX 模式设置
+*
+*	入口参数：	tau_time	TAU 时间		active_time active时间
+*
+*	返回参数：	0:成功  1:失败
+*
+*	说明：		
+*************************************************************/
+int qsdk_nb_set_edrx_mode(int mode,int act_type,char *edex_value,char *ptw_time)
+{
+#if (defined QSDK_USING_M5311)
+
+#if (defined QSDK_USING_LOG)
+	LOG_D("AT+CEDRXS=%d,%d,\"%s\",\"%s\"\n",mode,act_type,edex_value,ptw_time);
+#endif
+	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+CEDRXS=%d,%d,\"%s\",\"%s\"",mode,act_type,edex_value,ptw_time)!=RT_EOK)	return RT_ERROR;
+	
+	if(mode==1)
+	{
+#if (defined QSDK_USING_LOG)
+		LOG_D("AT*EDRXCFG=%d,%d,\"%s\",\"%s\"\r\n",mode,act_type,edex_value,ptw_time);
+#endif
+		if(at_obj_exec_cmd(nb_client,RT_NULL,"AT*EDRXCFG=%d,%d,\"%s\",\"%s\"",mode,act_type,edex_value,ptw_time)!=RT_EOK)	return RT_ERROR;
+		qsdk_nb_open_auto_psm();
+	}
+#endif
+	return  RT_EOK;
+}
+/*************************************************************
+*	函数名称：	nb_set_edrx_mode
+*
+*	函数功能：	模块 EDRX 模式设置
+*
+*	入口参数：	tau_time	TAU 时间		active_time active时间
+*
+*	返回参数：	0:成功  1:失败
+*
+*	说明：		
+*************************************************************/
+int qsdk_nb_exit_edrx_mode(void)
+{
+#if (defined QSDK_USING_M5311)
+	if(qsdk_nb_wait_connect()!=RT_EOK) return RT_ERROR;
+#endif
 	return  RT_EOK;
 }
 /*************************************************************
@@ -590,11 +700,15 @@ int qsdk_nb_ping_ip(char *ip)
 {
 	rt_uint32_t status;
 #if	(defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)	
+#if (defined QSDK_USING_LOG)
 	LOG_D("AT+NPING=%s\n",ip);
-	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+NPING=%s",ip)!=RT_EOK) return RT_ERROR;
+#endif
+	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+NPING=%s",ip)!=RT_EOK) return RT_ERROR;
 #elif (defined QSDK_USING_M5311)
+#if (defined QSDK_USING_LOG)
 	LOG_D("AT+PING=%s,,,1,,1\n",ip);
-	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+PING=%s,,,1,,1",ip)!=RT_EOK) return RT_ERROR;
+#endif
+	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+PING=%s,,,1,,1",ip)!=RT_EOK) return RT_ERROR;
 #endif	
 	
 	rt_event_recv(nb_event,EVENT_PING_ERROR|EVENT_PING_OK,RT_EVENT_FLAG_OR|RT_EVENT_FLAG_CLEAR,60000,&status);
@@ -605,7 +719,7 @@ int qsdk_nb_ping_ip(char *ip)
 	return RT_ERROR;
 }
 
-#ifdef QSDK_USING_M5311
+#if (defined QSDK_USING_M5311)||(defined QSDK_USING_ME3616)
 /*************************************************************
 *	函数名称：	qsdk_nb_open_net_light
 *
@@ -620,10 +734,15 @@ int qsdk_nb_ping_ip(char *ip)
 int qsdk_nb_open_net_light(void)
 {
 #ifdef QSDK_USING_M5311
-	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+CMSYSCTRL=0,2")!=RT_EOK)	return RT_ERROR;
+#if (defined QSDK_USING_LOG)
+	LOG_D("AT+CMSYSCTRL=0,2\n");
 #endif
-#ifdef QSDK_USING_ME3616
-	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+ZCONTLED=1")!=RT_EOK)	return RT_ERROR;
+	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+CMSYSCTRL=0,2")!=RT_EOK)	return RT_ERROR;
+#else
+#if (defined QSDK_USING_LOG)
+	LOG_D("AT+ZCONTLED=1\n");
+#endif
+	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+ZCONTLED=1")!=RT_EOK)	return RT_ERROR;
 #endif	
 	return  RT_EOK;
 }
@@ -641,14 +760,43 @@ int qsdk_nb_open_net_light(void)
 int qsdk_nb_close_net_light(void)
 {
 #ifdef QSDK_USING_M5311
-	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+CMSYSCTRL=0,0")!=RT_EOK)	return RT_ERROR;
+#if (defined QSDK_USING_LOG)
+	LOG_D("AT+CMSYSCTRL=0,0\n");
 #endif
-#ifdef QSDK_USING_ME3616
-	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+ZCONTLED=0")!=RT_EOK)	return RT_ERROR;
+	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+CMSYSCTRL=0,0")!=RT_EOK)	return RT_ERROR;
+#else
+#if (defined QSDK_USING_LOG)
+	LOG_D("AT+ZCONTLED=0\n");
+#endif
+	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+ZCONTLED=0")!=RT_EOK)	return RT_ERROR;
 #endif	
 	return  RT_EOK;
 }
-
+#ifdef QSDK_USING_M5311
+/*************************************************************
+*	函数名称：	qsdk_nb_set_rai_mode
+*
+*	函数功能：	配置模组完成数据发送或接收后，是否快速进入 idle 态
+*
+*	入口参数：	rai:
+								0 关闭 RAI
+								1 发送完 1 个上行包，模组立刻进入 idle 态
+								2 发送 1 个上行包，且接收到 1 个下行包，模组立即进入 idle 态
+*
+*	返回参数：	0:成功    1:失败
+*
+*	说明：		
+*************************************************************/
+int qsdk_nb_set_rai_mode(int rai)
+{
+#ifdef QSDK_USING_M5311
+#if (defined QSDK_USING_LOG)
+	LOG_D("AT*NBIOTRAI=%d\n",rai);
+#endif
+	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT*NBIOTRAI=%d",rai)!=RT_EOK)	return RT_ERROR;
+#endif	
+	return  RT_EOK;
+}
 /*************************************************************
 *	函数名称：	qsdk_nb_open_auto_psm
 *
@@ -663,7 +811,10 @@ int qsdk_nb_close_net_light(void)
 int qsdk_nb_open_auto_psm(void)
 {
 #ifdef QSDK_USING_M5311
-	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+SM=UNLOCK")!=RT_EOK)	return RT_ERROR;
+#if (defined QSDK_USING_LOG)
+	LOG_D("AT+SM=UNLOCK\n");
+#endif
+	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+SM=UNLOCK")!=RT_EOK)	return RT_ERROR;
 #endif	
 	return  RT_EOK;
 }
@@ -681,11 +832,14 @@ int qsdk_nb_open_auto_psm(void)
 int qsdk_nb_close_auto_psm(void)
 {
 #ifdef QSDK_USING_M5311
-	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+SM=LOCK")!=RT_EOK)	return RT_ERROR;
+#if (defined QSDK_USING_LOG)
+	LOG_D("AT+SM=LOCK\n");
+#endif
+	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+SM=LOCK")!=RT_EOK)	return RT_ERROR;
 #endif
 	return  RT_EOK;
 }
-
+#endif	
 #elif		(defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)
 /*************************************************************
 *	函数名称：	nb_query_ip
@@ -700,6 +854,9 @@ int qsdk_nb_close_auto_psm(void)
 *************************************************************/
 char *qsdk_nb_query_ip(void)
 {
+#if (defined QSDK_USING_DEBUG)
+	LOG_D("AT+CGPADDR\n");
+#endif
 	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+CGPADDR")!=RT_EOK) return RT_NULL;
 	
 	at_resp_parse_line_args(nb_resp,2,"+CGPADDR:0,%s",nb_device_table.ip);
@@ -719,6 +876,9 @@ char *qsdk_nb_query_ip(void)
 int qsdk_iot_check_address(void)
 {
 	char str[50];
+#if (defined QSDK_USING_DEBUG)
+	LOG_D("AT+NCDP?\n");
+#endif
 	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+NCDP?")!=RT_EOK) return RT_ERROR;
 	
 	at_resp_parse_line_args(nb_resp,2,"%s",str);
@@ -749,7 +909,7 @@ int qsdk_iot_set_address(void)
 {
 	LOG_D("AT+CFUN=0\n");
 
-	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+CFUN=0")!=RT_EOK)
+	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+CFUN=0")!=RT_EOK)
 	{
 		LOG_E("set AT+CFUN=0 error\n");
 		return RT_ERROR;
@@ -758,17 +918,17 @@ int qsdk_iot_set_address(void)
 	
 #if (defined QSDK_USING_M5310A) &&(defined QSDK_USING_IOT)
 	LOG_D("AT+NCDP=%s,%s\n",QSDK_IOT_ADDRESS,QSDK_IOT_PORT);
-	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+NCDP=%s,%s",QSDK_IOT_ADDRESS,QSDK_IOT_PORT)!=RT_EOK)
+	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+NCDP=%s,%s",QSDK_IOT_ADDRESS,QSDK_IOT_PORT)!=RT_EOK)
 #else
 	LOG_D("AT+NCDP=0.0.0.0,5683\n");
-	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+NCDP=0.0.0.0,5683")!=RT_EOK)
+	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+NCDP=0.0.0.0,5683")!=RT_EOK)
 #endif
 	{
 		LOG_E("set ncdp address error\n");
 		return RT_ERROR;
 	}
 	qsdk_iot_check_address();
-	rt_thread_delay(2000);
+	rt_thread_delay(2500);
 
 	if(qsdk_nb_reboot()==RT_EOK)	return RT_EOK;
 
@@ -844,6 +1004,12 @@ void hexstring_to_string(char * pHex,int len, char * pString)
 *************************************************************/
 void nb_reboot_func(char *data)
 {
+	//判断是否在未退出PSM前复位
+	if(qsdk_nb_get_psm_status()==RT_EOK)
+	{
+		rt_event_send(nb_event,EVENT_EXIT_PSM_REBOOT);
+	}
+/************************M5310A复位处理*****************************/
 #if	(defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)
 	if(rt_strstr(data,"REBOOT_CAUSE_SECURITY_RESET_PIN")!=RT_NULL)
 	{
@@ -877,7 +1043,7 @@ void nb_reboot_func(char *data)
 
 		if(nb_device_table.fota_open==NB_MODULE_REBOOT_FOR_FOTA) nb_device_table.fota_open=0;
 		nb_device_table.reboot_type=NB_MODULE_REBOOT_BY_FOTA;
-		qsdk_nb_reboot_callback();
+		qsdk_onenet_fota_callback();
 
 	}
 	else
@@ -887,34 +1053,122 @@ void nb_reboot_func(char *data)
 		nb_device_table.reboot_type=NB_MODULE_REBOOT_BY_OTHER;
 		qsdk_nb_reboot_callback();
 	}
-#endif
-#ifdef QSDK_USING_M5311
-if(rt_strstr(data,"*ATREADY: 1")!=RT_NULL)
-	{
-		LOG_E("%s\n nb-iot reboot\n",data);
-		if(nb_device_table.reboot_open==NB_MODULE_REBOOT_FOR_PIN||nb_device_table.reboot_open==NB_MODULE_REBOOT_FOR_AT)
-		{
-			rt_event_send(nb_event,EVENT_REBOOT);
-		}			
-		else qsdk_nb_reboot_callback();
-	}
-#endif
+#elif (defined QSDK_USING_M5311)
 
-#ifdef QSDK_USING_ME3616
-	if(rt_strstr(data,"*MATREADY: 1")!=RT_NULL)
+/************************M5311复位处理*****************************/
+	if(rt_strstr(data,"*ATREADY:")!=RT_NULL)
 	{
-		LOG_E("%s\n nb-iot reboot\n",data);
 		if(nb_device_table.reboot_open==NB_MODULE_REBOOT_FOR_PIN||nb_device_table.reboot_open==NB_MODULE_REBOOT_FOR_AT)
 		{
 			rt_event_send(nb_event,EVENT_REBOOT);
 		}			
-		else qsdk_nb_reboot_callback();
+		else
+		{
+			LOG_E("%s\n nb-iot reboot\n",data);
+			qsdk_nb_reboot_callback();
+		}
 	}
+#elif (defined QSDK_USING_ME3616)
+	
+/************************ME3616复位处理*****************************/
+	if(rt_strstr(data,"*MATREADY:")!=RT_NULL)
+	{
+		if(nb_device_table.reboot_open==NB_MODULE_REBOOT_FOR_PIN||nb_device_table.reboot_open==NB_MODULE_REBOOT_FOR_AT)
+		{
+			rt_event_send(nb_event,EVENT_REBOOT);
+		}			
+		else
+		{
+			LOG_E("%s\n nb-iot reboot\n",data);
+			qsdk_nb_reboot_callback();
+		}
+	}
+#endif
+		//清空nb模组信息
+		qsdk_nb_clear_environment();
+#ifdef QSDK_USING_NET
+		//清空net client信息
+		qsdk_net_clear_environment();
+#endif
+#ifdef QSDK_USING_ONENET
+	qsdk_onenet_clear_environment();
 #endif
 }
 
 /*************************************************************
-*	函数名称：	hand_thread_entry
+*	函数名称：	qsdk_psm_entry
+*
+*	函数功能：	模组主动上报数据处理函数
+*
+*	入口参数：	无
+*
+*	返回参数：	无
+*
+*	说明：		
+*************************************************************/
+void qsdk_psm_entry(void* parameter)
+{
+	rt_uint32_t status;
+	while(1)
+	{
+		//等待进入PSM指示
+		rt_event_recv(nb_event,EVENT_ENTER_PSM|EVENT_EXIT_PSM|EVENT_EXIT_PSM_REBOOT,RT_EVENT_FLAG_OR|RT_EVENT_FLAG_CLEAR,RT_WAITING_FOREVER,&status);
+		if(status==EVENT_ENTER_PSM)
+		{
+			//设置QSDK内部进入PSM指示
+			nbiot_psm_status=qsdk_nb_status_enter_psm;
+			
+			//锁住AT，停止程序发送AT命令
+			rt_mutex_take(nb_client->lock,RT_WAITING_FOREVER);
+		}
+		else if(status==EVENT_EXIT_PSM||status==EVENT_EXIT_PSM_REBOOT)
+		{
+			if(status==EVENT_EXIT_PSM_REBOOT)
+			{
+				nbiot_psm_status=qsdk_nb_status_psm_run;
+				//释放AT，释放后程序可以发送AT命令
+				rt_mutex_release(nb_client->lock);
+				
+#if (defined QSDK_USING_M5310A)
+				qsdk_nb_wait_connect();
+#if (defined QSDK_USING_DEBUG)
+				LOG_D("AT+CPSMS=0\n");
+#endif
+				at_obj_exec_cmd(nb_client,nb_resp,"AT+CPSMS=0");
+#endif
+			}
+			if(nbiot_psm_status==qsdk_nb_status_enter_psm)
+			{
+				//释放AT，释放后程序可以发送AT命令
+				rt_mutex_release(nb_client->lock);
+				//模组唤醒后需要关闭自动进入休眠设置
+#if (defined QSDK_USING_M5311)
+				qsdk_nb_close_auto_psm();
+#endif
+#if (defined QSDK_USING_M5310A)
+				qsdk_nb_wait_connect();
+#if (defined QSDK_USING_DEBUG)
+				LOG_D("AT+CPSMS=0\n");
+#endif
+				at_obj_exec_cmd(nb_client,nb_resp,"AT+CPSMS=0");
+#endif
+			}
+			//正常退出PSM时，
+			if(status==EVENT_EXIT_PSM)
+			{
+				if(qsdk_nb_get_psm_status()==RT_EOK)
+				{
+					//设置QSDK内部退出PSM指示
+					nbiot_psm_status=qsdk_nb_status_exit_psm;
+					rt_event_send(nb_event,EVENT_ENTER_RUN);
+				}
+			}
+		}
+
+	}
+}
+/*************************************************************
+*	函数名称：	qsdk_thread_entry
 *
 *	函数功能：	模组主动上报数据处理函数
 *
@@ -937,6 +1191,7 @@ void qsdk_thread_entry(void* parameter)
 		if(status==RT_EOK)
 		{
 #if	(defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)
+/*********************复位处理函数*************************/
 			if(rt_strstr(event,"REBOOT_")!=RT_NULL)
 #elif (defined QSDK_USING_M5311)
 			if(rt_strstr(event,"*ATREADY")!=RT_NULL)
@@ -946,6 +1201,9 @@ void qsdk_thread_entry(void* parameter)
 			{
 				nb_reboot_func(event);
 			}
+/*******************ping处理函数*********************/
+#if	(defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)||(defined QSDK_USING_M5311)
+			
 #if	(defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)
 			else if(rt_strstr(event,"+NPING:")!=RT_NULL)
 				
@@ -966,21 +1224,55 @@ void qsdk_thread_entry(void* parameter)
 				LOG_D("%s\r\n",event);
 				rt_event_send(nb_event,EVENT_PING_ERROR);
 			}
+#endif
+/********************进入PSM处理函数*************************/
+#if (defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)
+			else if(rt_strstr(event,"+NPSMR:1")!=RT_NULL)
+//#endif
+#elif	(defined QSDK_USING_M5311)
+			else if(rt_strstr(event,"*GOTOSLEEP")!=RT_NULL)	
+#elif (defined QSDK_USING_ME3616)
+			else if(rt_strstr(event,"*MNBIOTEVENT: \"ENTER PSM\"")!=RT_NULL)	
+#endif
+			{
+				LOG_I("nb-iot enter psm\n");
+#ifdef QSDK_USING_LOG
+				LOG_D("%s\r\n",event);
+#endif
+				rt_event_send(nb_event,EVENT_ENTER_PSM);
+			}
+/*********************退出PSM处理函数**************************/
+#if (defined QSDK_USING_M5311)||(defined QSDK_USING_ME3616)
+			
+#if	(defined QSDK_USING_M5311)
+			else if(rt_strstr(event,"*MATWAKEUP")!=RT_NULL)	
+#elif (defined QSDK_USING_ME3616)
+			else if(rt_strstr(event,"*MNBIOTEVENT: \"EXIT PSM\"")!=RT_NULL)	
+#endif
+			{
+#ifdef QSDK_USING_LOG
+			LOG_D("%s\r\n",event);
+#endif
+				
+				rt_event_send(nb_event,EVENT_EXIT_PSM);
+			}
+#endif
+/*****************************************************************/
 			else
 			{
-//引用业务处理函数
+			//NET处理函数
 #ifdef QSDK_USING_NET
 			net_event_func(event);
 #endif
-
+			//IOT处理函数
 #ifdef QSDK_USING_IOT
 			iot_event_func(event);
 #endif
-			
+			//ONENET处理函数			
 #ifdef QSDK_USING_ONENET
 			onenet_event_func(event);
 #endif
-
+			//MQTT处理函数
 #ifdef QSDK_USING_MQTT
 			mqtt_event_func(event);
 #endif			
@@ -1027,6 +1319,9 @@ static struct at_urc nb_urc_table[]={
 	{"REBOOT_",           "\r",nb_event_func},
 	{"+NPING:",           "\r",nb_event_func},
 	{"+NPINGERR:",           "\r",nb_event_func},
+	//PSM指示
+	{"+NPSMR:1",           "\r",nb_event_func},
+//	{"+NPSMR:0",           "\r",nb_event_func},
 //如果启用TCP/UDP支持，增加NET函数调用
 #ifdef QSDK_USING_NET
 	{"+NSONMI:",           "\r",nb_event_func},
@@ -1057,6 +1352,9 @@ static struct at_urc nb_urc_table[]={
 
 #elif (defined QSDK_USING_M5311)
 	{"*ATREADY:",           "\r",nb_event_func},
+	//PSM指示
+	{"*GOTOSLEEP",           "\r",nb_event_func},
+	{"*MATWAKEUP",           "\r",nb_event_func},
 //如果启用TCP/UDP支持，增加NET函数调用
 #ifdef QSDK_USING_NET
 	{"+IPRD:",              "\r\n",nb_event_func},
@@ -1065,6 +1363,13 @@ static struct at_urc nb_urc_table[]={
 #endif
 #elif (defined QSDK_USING_ME3616)
 	{"*MATREADY:",           "\r",nb_event_func},
+	//PSM指示
+	{"*MNBIOTEVENT: \"ENTER PSM\"",           "\r",nb_event_func},
+	{"*MNBIOTEVENT: \"EXIT PSM\"",            "\r",nb_event_func},
+#ifdef QSDK_USING_IOT
+	{"+M2MCLI",				  	 "\r\n",nb_event_func},	
+	{"+M2MCLIRECV",				 "\r\n",nb_event_func},		
+#endif
 #endif	
 	
 
@@ -1161,7 +1466,7 @@ int qsdk_init_environment(void)
 		return RT_ERROR;
 	}
 	//create event
-	nb_event=rt_event_create("nb_event",RT_IPC_FLAG_FIFO);
+	nb_event=rt_event_create("nb_event",RT_IPC_FLAG_PRIO);
 	if(nb_event==RT_NULL)
 	{
 		LOG_E("create event error\n");
@@ -1181,17 +1486,32 @@ int qsdk_init_environment(void)
 		LOG_E("create event hand fun error\n");
 		return RT_ERROR;
 	}
+		//create psm hand fun
+	qsdk_psm_id=rt_thread_create("qsdk_psm",
+																	qsdk_psm_entry,
+																	RT_NULL,
+																	QSDK_HAND_THREAD_STACK_SIZE,
+																	12,
+																	50);
+	if(qsdk_psm_id!=RT_NULL)
+		rt_thread_startup(qsdk_psm_id);
+	else
+	{
+		LOG_E("create qsdk psm fun error\n");
+		return RT_ERROR;
+	}
 	rt_memset(&nb_device_table,0,sizeof(nb_device_table));
 	nb_device_table.reboot_open=NB_MODULE_REBOOT_FOR_PIN;
 	nb_device_table.reboot_type=NB_MODULE_NO_INIT;
 	nb_device_table.net_connect_ok=NB_MODULE_NO_INIT;
+	nbiot_psm_status=qsdk_nb_status_exit_psm;
 	//nb-iot gpio init
 	if(nb_io_init()!=RT_EOK)
 	{
 		LOG_E("nb-iot gpio init error\n");
 		return RT_ERROR;
 	}		
-	if(rt_event_recv(nb_event,EVENT_REBOOT,RT_EVENT_FLAG_AND|RT_EVENT_FLAG_CLEAR,7500,&status)!=RT_EOK)
+	if(rt_event_recv(nb_event,EVENT_REBOOT,RT_EVENT_FLAG_AND|RT_EVENT_FLAG_CLEAR,20000,&status)!=RT_EOK)
 	{
 		LOG_E("nb-iot power on reset error,Check the reset pin or qsdk config\n");
 		return RT_ERROR;
@@ -1205,6 +1525,7 @@ int qsdk_init_environment(void)
 		LOG_E("nb-iot wait connect error,no find nb-iot module\n");
 		return RT_ERROR;
 	}
+
 	return RT_EOK;
 }
 /*************************************************************
@@ -1221,6 +1542,67 @@ int qsdk_init_environment(void)
 int qsdk_nb_quick_connect(void)
 {
 	rt_uint32_t i=5;
+/*********************模块上电强制设置**************************/
+
+#if (defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)
+	//开启进入PSM提示
+#if (defined QSDK_USING_DEBUG)
+	LOG_D("AT+NPSMR=1\n");
+#endif
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+NPSMR=1")!=RT_EOK)	return RT_ERROR;
+	
+#elif (defined QSDK_USING_M5311)
+	//关闭回显
+#if (defined QSDK_USING_DEBUG)
+	LOG_D("ATE0\n");
+#endif
+	if(at_obj_exec_cmd(nb_client,RT_NULL,"ATE0")!=RT_EOK)	return RT_ERROR;
+
+	//开启进入PSM提示
+#if (defined QSDK_USING_DEBUG)
+	LOG_D("AT*SLEEP=1\n");
+#endif
+	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT*SLEEP=1")!=RT_EOK)	return RT_ERROR;
+	
+		//开启退出PSM提示
+#if (defined QSDK_USING_DEBUG)
+	LOG_D("AT*MATWAKEUP=1\n");
+#endif
+	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT*MATWAKEUP=1")!=RT_EOK)	return RT_ERROR;
+	
+	if(qsdk_nb_get_psm_status()!=RT_EOK)
+	{
+		qsdk_nb_close_auto_psm();
+	}
+	qsdk_nb_open_net_light();
+	
+#if (defined QSDK_USING_NET)
+		qsdk_net_set_out_format();
+#endif
+
+#elif (defined QSDK_USING_ME3616)
+	//关闭回显
+#if (defined QSDK_USING_DEBUG)
+	LOG_D("ATE0\n");
+#endif
+	if(at_obj_exec_cmd(nb_client,RT_NULL,"ATE0")!=RT_EOK)	return RT_ERROR;
+	
+		//开启进入PSM提示
+#if (defined QSDK_USING_DEBUG)
+	LOG_D("AT*MNBIOTEVENT=1,1\n");
+#endif
+	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT*MNBIOTEVENT=1,1")!=RT_EOK)	return RT_ERROR;
+	
+		qsdk_nb_open_net_light();
+#if (defined QSDK_USING_IOT)	
+	//设置数据发送模式
+#if (defined QSDK_USING_DEBUG)
+	LOG_D("AT+M2MCLICFG=1,0\n");
+#endif
+	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+M2MCLICFG=1,0")!=RT_EOK) return RT_ERROR;
+#endif
+#endif
+
 #ifdef QSDK_USING_M5310A
 //如果启用M5310连接IOT平台
 	if(qsdk_iot_check_address()!=RT_EOK)
@@ -1259,15 +1641,6 @@ int qsdk_nb_quick_connect(void)
 			i=5;
 			rt_thread_delay(1000);
 		}	
-#if (defined QSDK_USING_M5311)||(defined QSDK_USING_ME3616)
-		if(qsdk_nb_open_net_light()!=RT_EOK)
-		{
-			LOG_E("nb-iot open net light error\n");
-			return RT_ERROR;
-		}
-		if(qsdk_nb_open_auto_psm()!=RT_EOK)
-			LOG_E("nb-iot open auto psm error\n");
-#endif
 //获取SIM卡的IMSI号码		
 		do{
 				i--;
@@ -1366,7 +1739,7 @@ int qsdk_nb_quick_connect(void)
 			LOG_E("nb-iot connect network failurer\n");
 			return RT_ERROR;
 		}	
-		rt_thread_delay(1000);			
+		rt_thread_delay(2000);			
 		LOG_D("CEREG=%d\n",nb_device_table.net_connect_ok);
 
 //获取ntp服务器时间
@@ -1375,10 +1748,6 @@ int qsdk_nb_quick_connect(void)
 		{
 			LOG_E("getting network time errorsr\n");
 		}
-#if (defined QSDK_USING_M5311)&&(defined QSDK_USING_NET)
-		qsdk_nb_close_auto_psm();
-		qsdk_net_set_out_format();
-#endif
 		LOG_D("nb-iot connect network success\n");		
 				
 		return RT_EOK;	
@@ -1426,7 +1795,7 @@ void qsdk_nb(int argc,char**argv)
 				rt_kprintf("nb-iot module networking  successful\n");
 			else rt_kprintf("nb-iot module networking  error\n");
 		}
-#ifdef QSDK_USING_M5311
+#if (defined QSDK_USING_M5311)||(defined QSDK_USING_ME3616)
 		else if (!strcmp(argv[1], "open_net_light"))
 		{
 			qsdk_nb_open_net_light();
@@ -1435,6 +1804,7 @@ void qsdk_nb(int argc,char**argv)
 		{
 			qsdk_nb_close_net_light();
 		}
+#if (defined QSDK_USING_M5311)
 		else if (!strcmp(argv[1], "open_auto_psm"))
 		{
 			qsdk_nb_open_auto_psm();
@@ -1444,6 +1814,12 @@ void qsdk_nb(int argc,char**argv)
 			qsdk_nb_close_auto_psm();
 		}
 #endif
+
+#endif
+		else if (!strcmp(argv[1], "exit_psm"))
+		{
+			qsdk_nb_exit_psm();
+		}
 		else
 		{
 				rt_kprintf("Unknown command. Please enter 'qsdk_nb' for help\n");
@@ -1458,12 +1834,16 @@ void qsdk_nb(int argc,char**argv)
 		rt_kprintf("qsdk_nb get_imei              - Get the nb-iot module imei\n");
 		rt_kprintf("qsdk_nb get_csq               - Get nb-iot Module Signal Value\n");
 		rt_kprintf("qsdk_nb get_net_connect       - Getting the networking status of nb-iot module\n");
-#ifdef QSDK_USING_M5311
+#if (defined QSDK_USING_M5311)||(defined QSDK_USING_ME3616)
 		rt_kprintf("qsdk_nb open_net_light        - nb-iot module enable network led\n");
 		rt_kprintf("qsdk_nb close_net_light       - nb-iot module disable network led\n");
+#if (defined QSDK_USING_M5311)
 		rt_kprintf("qsdk_nb open_auto_psm         - nb-iot module enable auto psm sleep\n");
 		rt_kprintf("qsdk_nb close_auto_psm        - nb-iot module disable auto psm sleep\n");
 #endif
+
+#endif
+		rt_kprintf("qsdk_nb exit_psm              - nb-iot module exit psm mode\n");
 	}	
 }
 

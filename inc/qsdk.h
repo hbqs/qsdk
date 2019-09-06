@@ -10,6 +10,7 @@
  * 2019-06-13     longmain     add net close callback
  * 2019-06-13     longmain     del qsdk_onenet_init_environment
  * 2019-06-30     longmain     add qsdk_nb_clear_environment
+ * 2019-08-30     longmain     Adding PSM support function
  */
 
 #ifndef __QSDK_H__
@@ -25,18 +26,6 @@ enum qsdk_nb_status_type
 	qsdk_nb_status_enter_psm,
 	qsdk_nb_status_exit_psm,
 	qsdk_nb_status_psm_run,
-#ifdef QSDK_USING_IOT
-	qsdk_iot_status_reg_init,
-	qsdk_iot_status_reg_failure,
-	qsdk_iot_status_reg_success,
-	qsdk_iot_status_observer_failure,
-	qsdk_iot_status_observer_success,
-	qsdk_iot_status_unreg_success,
-	qsdk_iot_status_notify_init,
-	qsdk_iot_status_notify_failure,
-	qsdk_iot_status_notify_success,
-	qsdk_iot_status_notify_timeout
-#endif
 };
 
 struct nb_device
@@ -46,7 +35,6 @@ struct nb_device
 	int  reboot_open;
 	int  fota_open;
 	int  reboot_type;
-	int  psm_status;
 	int  net_connect_ok;
 	int  error;
 	int  csq;
@@ -57,12 +45,10 @@ struct nb_device
 
 
 //qsdk_nb_fun
-void qsdk_nb_clear_environment(void);
 int qsdk_nb_quick_connect(void);
 int qsdk_nb_reboot(void);
 int qsdk_nb_wait_connect(void);
 int qsdk_nb_sim_check(void);
-int qsdk_nb_set_psm_mode(char *tau_time,char *active_time);
 char *qsdk_nb_get_imsi(void);
 char *qsdk_nb_get_imei(void);
 int qsdk_nb_get_time(void);
@@ -71,16 +57,24 @@ int qsdk_nb_set_net_start(void);
 int qsdk_nb_get_net_connect(void);
 int qsdk_nb_get_net_connect_status(void);
 int qsdk_nb_get_reboot_event(void);
+int qsdk_nb_set_psm_mode(int mode,char *tau_time,char *active_time);
 void qsdk_nb_enter_psm(void);
 int qsdk_nb_exit_psm(void);
 int qsdk_nb_get_psm_status(void);
+int qsdk_nb_set_edrx_mode(int mode,int act_type,char *edex_value,char *ptw_time);
+int qsdk_nb_exit_edrx_mode(void);
 int qsdk_nb_ping_ip(char *ip);
 
-#ifdef QSDK_USING_M5311
+#if (defined  QSDK_USING_M5311)||(defined  QSDK_USING_ME3616)
 int qsdk_nb_open_net_light(void);
 int qsdk_nb_close_net_light(void);
+
+#if (defined  QSDK_USING_M5311)
+int qsdk_nb_set_rai_mode(int rai);
 int qsdk_nb_open_auto_psm(void);
 int qsdk_nb_close_auto_psm(void);
+#endif
+
 #elif	(defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)
 char *qsdk_nb_query_ip(void);
 #endif
@@ -92,12 +86,19 @@ void hexstring_to_string(char * pHex,int len, char * pString);
 
 
 #ifdef QSDK_USING_IOT
+
+#ifdef QSDK_USING_ME3616
+int qsdk_iot_create_new_client(void);
+int qsdk_iot_del_client(void);
+int qsdk_iot_notify(char *str);
+int qsdk_iot_get_connect_status(void);
+#elif (defined QSDK_USING_M5310A)
 int qsdk_iot_open_update_status(void);
 int qsdk_iot_open_down_date_status(void);
-int qsdk_iot_update(char *str);
+int qsdk_iot_notify(char *str);
 #endif
 
-
+#endif //endif iot seting
 
 //qsdk_net_fun
 #ifdef QSDK_USING_NET
@@ -135,7 +136,6 @@ int qsdk_net_send_data(qsdk_net_client_t client,char *str);
 int qsdk_net_get_client_revice(qsdk_net_client_t client);
 int qsdk_net_get_client_connect(qsdk_net_client_t client);
 int qsdk_net_close_socket(qsdk_net_client_t client);
-int qsdk_net_clear_environment(void);
 #endif
 
 //qsdk_onenet_fun
@@ -216,7 +216,6 @@ int qsdk_onenet_get_object_read(qsdk_onenet_stream_t stream);
 int qsdk_onenet_get_object_write(qsdk_onenet_stream_t stream);
 int qsdk_onenet_get_object_exec(qsdk_onenet_stream_t stream);
 int qsdk_onenet_read_rsp(int msgid,int result,qsdk_onenet_stream_t stream,int len,qsdk_onenet_value_t data,int index,int flge);
-int qsdk_onenet_clear_environment(void);
 
 #if	(defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)
 int qsdk_onenet_notify_and_ack(qsdk_onenet_stream_t stream,int len,qsdk_onenet_value_t data,int flge);

@@ -30,7 +30,7 @@ qsdk开放源码，nb控制块、协议处理块均采用数据结构方式，�
 
 ![](https://github.com/hbqs/qsdk/blob/master/help/png/3.png?raw=true)
 
-4. **点击进去选择支持的nb-iot模块（目前支持M5310、M5310A、M5311）**
+4. **点击进去设置模块相关信息**
 
 ![](https://github.com/hbqs/qsdk/blob/master/help/png/4.png?raw=true)
 
@@ -38,7 +38,7 @@ qsdk开放源码，nb控制块、协议处理块均采用数据结构方式，�
 
 ![](https://github.com/hbqs/qsdk/blob/master/help/png/5.png?raw=true)
 
-6. **设置需要支持的引脚和勾选需要支持的协议**
+6. **设置需要模块的引脚和需要支持的协议**
 
 ![](https://github.com/hbqs/qsdk/blob/master/help/png/6.png?raw=true)
 

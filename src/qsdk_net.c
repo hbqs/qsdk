@@ -49,10 +49,11 @@ enum	NET_CONNECT_TYPE
 	NET_CONNECT_START=10,
 	NET_CONNECT_SUCCESS,
 	NET_CONNECT_FAIL,
+	NET_CONNECT_ERROR,
 };
 
-#define EVENT_NET_CONNECT_SUCCESS		(89<<1)
-#define EVENT_NET_CONNECT_FAILURE		(88<<1)
+#define EVENT_NET_CONNECT_SUCCESS		(1<<16)
+#define EVENT_NET_CONNECT_FAILURE		(1<<17)
 
 extern at_response_t nb_resp;
 extern at_client_t nb_client;
@@ -199,6 +200,7 @@ int qsdk_net_send_data(qsdk_net_client_t client,char *str)
 		if(at_obj_exec_cmd(nb_client,nb_resp,"AT+IPSEND=%d,0,\"%s\",1",client->socket,str)!=RT_EOK)
 		{
 			LOG_E("net data send fail\n");
+			client->connect_status=NET_CONNECT_ERROR;
 			return RT_ERROR;
 		}
 		return RT_EOK;
@@ -209,6 +211,7 @@ int qsdk_net_send_data(qsdk_net_client_t client,char *str)
 		if(at_obj_exec_cmd(nb_client,nb_resp,"AT+IPSEND=%d,0,\"%s\",\"%s\",%d,1",client->socket,str,client->server_ip,client->server_port)!=RT_EOK) 
 		{
 			LOG_E("net data send fail\n");
+			client->connect_status=NET_CONNECT_ERROR;
 			return RT_ERROR;
 		}
 		return RT_EOK;
@@ -252,6 +255,8 @@ int qsdk_net_get_client_connect(qsdk_net_client_t client)
 {
 	if(client->connect_status==NET_CONNECT_SUCCESS)	return RT_EOK;
 
+	if(client->connect_status==NET_CONNECT_ERROR)	return 2;
+	
 	return RT_ERROR;
 }
 
@@ -269,9 +274,11 @@ int qsdk_net_get_client_connect(qsdk_net_client_t client)
 int qsdk_net_close_socket(qsdk_net_client_t client)
 {	
 	int i;
-	LOG_D("AT+IPCLOSE=%d\n",client->socket);
-	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+IPCLOSE=%d",client->socket)!=RT_EOK) return RT_ERROR;
-	
+  if(client->connect_status==NET_CONNECT_SUCCESS||client->connect_status==NET_CONNECT_ERROR)
+	{
+		LOG_D("AT+IPCLOSE=%d\n",client->socket);
+		at_obj_exec_cmd(nb_client,nb_resp,"AT+IPCLOSE=%d",client->socket);
+	}
 	//清空client信息
 	for(i=0;i<QSDK_NET_CLIENT_MAX;i++)
 	{
@@ -462,7 +469,6 @@ int qsdk_net_create_socket(qsdk_net_client_t client)
 		{
 			LOG_D("net connect to server success\n");
 			client->connect_status=NET_CONNECT_SUCCESS;
-			return RT_EOK;
 		}
 		else
 		{
@@ -487,53 +493,11 @@ int qsdk_net_create_socket(qsdk_net_client_t client)
 		LOG_E("net type is not udp or tcp\n");
 		return RT_ERROR;	
 	}
+	//连接好tcp/udp服务器后，防止设备端上报数据和服务器立马下发数据同时进行，在此之前没有延时，造成内部数据丢失，所以在此延时500ms解决。
+	rt_thread_delay(500);
 	return RT_EOK;
 }
-//#if	(defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)
-///*************************************************************
-//*	函数名称：	qsdk_net_connect_to_server
-//*
-//*	函数功能：	连接到TCP服务器
-//*
-//*	入口参数：	client: net客户端结构体
-//*
-//*	返回参数：	0 成功  1	失败
-//*
-//*	说明：		
-//*************************************************************/
-//int qsdk_net_connect_to_server(qsdk_net_client_t client)
-//{
-//	rt_uint32_t status;
-//	if(client->type==QSDK_NET_TYPE_TCP)
-//	{
-//		client->connect_status=NET_CONNECT_START;
-//		LOG_D("AT+NSOCO=%d,%s,%d\n",client->socket,client->server_ip,client->server_port);
-//		if(at_obj_exec_cmd(nb_client,nb_resp,"AT+NSOCO=%d,%s,%d",client->socket,client->server_ip,client->server_port)!=RT_EOK)
-//		{
-//			LOG_E("net connect to server send fail\n");
-//			return RT_ERROR;
-//		}
-//		if(rt_event_recv(nb_event,EVENT_NET_CONNECT_FAILURE|EVENT_NET_CONNECT_SUCCESS,RT_EVENT_FLAG_OR|RT_EVENT_FLAG_CLEAR,RT_WAITING_FOREVER,&status)!=RT_EOK)
-//		{
-//			LOG_E("net connect to server error\n");
-//			return RT_ERROR;
-//		}
-//		if(status==EVENT_NET_CONNECT_FAILURE)
-//		{
-//			LOG_E("net connect to server failure\n");
-//			client->connect_status=NET_CONNECT_FAIL;
-//			return RT_ERROR;
-//		}
-//		else if(status==EVENT_NET_CONNECT_SUCCESS)
-//		{
-//			LOG_D("net connect to server success\n");
-//			client->connect_status=NET_CONNECT_SUCCESS;
-//			return RT_EOK;
-//		}
-//	}
-//	return RT_EOK;
-//}
-//#endif
+
 /*************************************************************
 *	函数名称：	qsdk_net_send_data
 *
@@ -552,7 +516,7 @@ int qsdk_net_send_data(qsdk_net_client_t client,char *str)
 		LOG_E("net send data too long\n");
 		return RT_ERROR;
 	}
-	char *buf=rt_calloc(1,strlen(str)*2);
+	char *buf=rt_calloc(1,strlen(str)*2+10);
 	if(buf==RT_NULL)
 	{
 		LOG_E("net create resp buf error\n");
@@ -589,6 +553,7 @@ int qsdk_net_send_data(qsdk_net_client_t client,char *str)
 		}
 __exit:
 	rt_free(buf);
+	client->connect_status=NET_CONNECT_ERROR;
 	return RT_ERROR;
 }
 
@@ -686,13 +651,15 @@ int qsdk_net_get_client_revice(qsdk_net_client_t client)
 *
 *	入口参数：	client：NET客户端ID
 *
-*	返回参数：	0 已连接  1	未连接
+*	返回参数：	0 已连接  1	未连接   2 发送错误
 *
 *	说明：		
 *************************************************************/
 int qsdk_net_get_client_connect(qsdk_net_client_t client)
 {
 	if(client->connect_status==NET_CONNECT_SUCCESS)	return RT_EOK;
+	
+	if(client->connect_status==NET_CONNECT_ERROR)	return 2;
 
 	return RT_ERROR;
 }
@@ -711,9 +678,11 @@ int qsdk_net_get_client_connect(qsdk_net_client_t client)
 int qsdk_net_close_socket(qsdk_net_client_t client)
 {	
 	int i;
-	LOG_D("AT+NSOCL=%d\n",client->socket);
-	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+NSOCL=%d",client->socket)!=RT_EOK) return RT_ERROR;
-	
+	if(client->connect_status==NET_CONNECT_SUCCESS||client->connect_status==NET_CONNECT_ERROR)
+	{
+		LOG_D("AT+NSOCL=%d\n",client->socket);
+		at_obj_exec_cmd(nb_client,nb_resp,"AT+NSOCL=%d",client->socket);
+	}
 	//清空client信息
 	for(i=0;i<QSDK_NET_CLIENT_MAX;i++)
 	{
@@ -739,7 +708,7 @@ int qsdk_net_close_socket(qsdk_net_client_t client)
 int qsdk_net_clear_environment(void)
 {	
 	memset(net_client_table,0,sizeof(net_client_table));
-	LOG_D("qsdk net client environment clear success\n");
+
 	return RT_EOK;
 }
 /*************************************************************
@@ -947,6 +916,7 @@ void qsdk_net(int argc,char**argv)
 			else if (!strcmp(argv[1], "clear"))
 			{
 				qsdk_net_clear_environment();
+				LOG_D("qsdk net client environment clear success\n");
 			}
 			else
 			{
