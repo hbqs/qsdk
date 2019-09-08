@@ -1551,6 +1551,10 @@ int qsdk_nb_quick_connect(void)
 #endif
 	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+NPSMR=1")!=RT_EOK)	return RT_ERROR;
 	
+	if(qsdk_nb_get_psm_status()!=RT_EOK)
+	{
+		qsdk_nb_set_psm_mode(0,RT_NULL,RT_NULL);
+	}
 #elif (defined QSDK_USING_M5311)
 	//πÿ±’ªÿœ‘
 #if (defined QSDK_USING_DEBUG)
