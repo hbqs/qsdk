@@ -14,6 +14,7 @@
  * 2019-06-13     longmain     qsdk environment is auto init by the system app
  * 2019-06-30     longmain     add qsdk_nb_clear_environment
  * 2019-08-30     longmain     Adding PSM support function
+ * 2019-09-19     longmain     Adding wakeup_out function
  */
 
 #include "qsdk.h"
@@ -49,7 +50,8 @@
 #define EVENT_ENTER_RUN 			  (1<< 6)
 #define EVENT_PING_OK						(1<< 7)
 #define EVENT_PING_ERROR				(1<< 8)
-
+#define EVENT_GPS_DOWN_OK				(1<< 9)
+#define EVENT_GPS_DOWN_FAILED		(1<<10)
 
 //引用业务处理函数
 #ifdef QSDK_USING_NET
@@ -71,7 +73,9 @@ extern int qsdk_onenet_clear_environment(void);
 extern void mqtt_event_func(char *event);
 #endif
 
-
+#ifdef QSDK_USING_ME3616_GPS
+extern void qsdk_gps_event_func(char *event);
+#endif
 
 enum nb_reboot_type
 {
@@ -130,7 +134,7 @@ static 	int  nbiot_psm_status=0;
 *
 *	说明：		
 *************************************************************/
-int nb_io_init(void)
+static int nb_io_init(void)
 {
 #ifdef QSDK_USING_PWRKEY
 	rt_pin_mode(QSDK_PWRKEY_PIN,PIN_MODE_OUTPUT);
@@ -155,7 +159,7 @@ int nb_io_init(void)
 	
 	return RT_EOK;
 }
-
+#if	(defined QSDK_USING_M5311)||(defined QSDK_USING_ME3616)
 /*************************************************************
 *	函数名称：	nb_io_exit_psm
 *
@@ -167,16 +171,47 @@ int nb_io_init(void)
 *
 *	说明：		
 *************************************************************/
-int nb_io_exit_psm(void)
+static int nb_io_exit_psm(void)
 {
-#if	(defined QSDK_USING_M5311)||(defined QSDK_USING_ME3616)
 	rt_pin_write(QSDK_WAKEUP_IN_PIN,nb_pin.wake_in_low);
 	rt_thread_delay(200);
 	rt_pin_write(QSDK_WAKEUP_IN_PIN,nb_pin.wake_in_high);
 	rt_thread_delay(500);
-#endif
+
 	return RT_EOK;
 }
+
+static void nb_wakeup_enable_irq(void)
+{
+	rt_pin_irq_enable(QSDK_WAKEUP_OUT_PIN,1);
+}
+static void nb_wakeup_disable_irq(void)
+{
+	rt_pin_irq_enable(QSDK_WAKEUP_OUT_PIN,0);
+}
+
+static void nb_wakeup_event(void *args)
+{
+	nb_wakeup_disable_irq();
+	if(nbiot_psm_status==qsdk_nb_status_enter_psm)
+	{
+		rt_event_send(nb_event,EVENT_EXIT_PSM);
+	}
+}
+
+static void nb_wakeup_init(void)
+{
+	rt_pin_mode(QSDK_WAKEUP_OUT_PIN,PIN_MODE_INPUT);
+	if(QSDK_WAKEUP_OUT_PIN_VALUE==1)
+	{
+		rt_pin_attach_irq(QSDK_WAKEUP_OUT_PIN,PIN_IRQ_MODE_RISING,nb_wakeup_event,RT_NULL);
+	}
+	else
+	{
+		rt_pin_attach_irq(QSDK_WAKEUP_OUT_PIN,PIN_IRQ_MODE_FALLING,nb_wakeup_event,RT_NULL);
+	}
+}
+#endif
 /*************************************************************
 *	函数名称：	qsdk_nb_clear_environment
 *
@@ -429,7 +464,7 @@ int qsdk_nb_set_net_start(void)
 #if (defined QSDK_USING_DEBUG)
 	LOG_D("AT+CGATT=1\n");
 #endif
-	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+CGATT=1")!=RT_EOK)	return RT_ERROR;
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+CGATT=1")!=RT_EOK)	return RT_ERROR;
 	
 	return  RT_EOK;
 }
@@ -518,21 +553,21 @@ int qsdk_nb_set_psm_mode(int mode,char *tau_time,char *active_time)
 #if (defined QSDK_USING_DEBUG)
 	LOG_D("AT+CPSMS=0\n");
 #endif
-		if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+CPSMS=0")!=RT_EOK)	return RT_ERROR;		
+		if(at_obj_exec_cmd(nb_client,nb_resp,"AT+CPSMS=0")!=RT_EOK)	return RT_ERROR;		
 	}
 	else if(mode==1)
 	{
 #if (defined QSDK_USING_DEBUG)
 	LOG_D("AT+CPSMS=1,,,\"%s\",\"%s\"\n",tau_time,active_time);
 #endif
-		if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+CPSMS=1,,,\"%s\",\"%s\"",tau_time,active_time)!=RT_EOK)	return RT_ERROR;	
-#if (defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)
+		if(at_obj_exec_cmd(nb_client,nb_resp,"AT+CPSMS=1,,,\"%s\",\"%s\"",tau_time,active_time)!=RT_EOK)	return RT_ERROR;	
+#if (defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)||(defined QSDK_USING_ME3616)
 		if(qsdk_nb_get_psm_status()!=RT_EOK)
 		{
 #if (defined QSDK_USING_DEBUG)
 			LOG_D("AT+CPSMS=0\n");
 #endif
-			if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+CPSMS=0")!=RT_EOK)	return RT_ERROR;	
+			if(at_obj_exec_cmd(nb_client,nb_resp,"AT+CPSMS=0")!=RT_EOK)	return RT_ERROR;	
 		}
 #endif
 	}
@@ -562,19 +597,25 @@ void qsdk_nb_enter_psm(void)
 #if (defined QSDK_USING_DEBUG)
 	LOG_D("AT+CPSMS=1\n");
 #endif
-	at_obj_exec_cmd(nb_client,RT_NULL,"AT+CPSMS=1");	
-#elif QSDK_USING_ME3616
+	at_obj_exec_cmd(nb_client,nb_resp,"AT+CPSMS=1");	
+#elif (defined QSDK_USING_ME3616)
+
+	//开启PSM模式
+#if (defined QSDK_USING_DEBUG)
+	LOG_D("AT+CPSMS=1\n");
+#endif
+	at_obj_exec_cmd(nb_client,nb_resp,"AT+CPSMS=1");
 #if (defined QSDK_USING_DEBUG)
 	LOG_D("AT+ZSLR\n");
 #endif
-	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+ZSLR")!=RT_EOK)
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+ZSLR")!=RT_EOK)
 		LOG_E("nb-iot set psm cmd error\n");
 #elif (defined QSDK_USING_M5311)
 	qsdk_nb_open_auto_psm();
 #if (defined QSDK_USING_DEBUG)
 	LOG_D("AT*ENTERSLEEP\n");
 #endif
-	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT*ENTERSLEEP")!=RT_EOK)
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT*ENTERSLEEP")!=RT_EOK)
 		LOG_E("nb-iot set psm cmd error\n");
 #endif
 		//等待退出PSM事件
@@ -654,14 +695,14 @@ int qsdk_nb_set_edrx_mode(int mode,int act_type,char *edex_value,char *ptw_time)
 #if (defined QSDK_USING_LOG)
 	LOG_D("AT+CEDRXS=%d,%d,\"%s\",\"%s\"\n",mode,act_type,edex_value,ptw_time);
 #endif
-	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+CEDRXS=%d,%d,\"%s\",\"%s\"",mode,act_type,edex_value,ptw_time)!=RT_EOK)	return RT_ERROR;
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+CEDRXS=%d,%d,\"%s\",\"%s\"",mode,act_type,edex_value,ptw_time)!=RT_EOK)	return RT_ERROR;
 	
 	if(mode==1)
 	{
 #if (defined QSDK_USING_LOG)
 		LOG_D("AT*EDRXCFG=%d,%d,\"%s\",\"%s\"\r\n",mode,act_type,edex_value,ptw_time);
 #endif
-		if(at_obj_exec_cmd(nb_client,RT_NULL,"AT*EDRXCFG=%d,%d,\"%s\",\"%s\"",mode,act_type,edex_value,ptw_time)!=RT_EOK)	return RT_ERROR;
+		if(at_obj_exec_cmd(nb_client,nb_resp,"AT*EDRXCFG=%d,%d,\"%s\",\"%s\"",mode,act_type,edex_value,ptw_time)!=RT_EOK)	return RT_ERROR;
 		qsdk_nb_open_auto_psm();
 	}
 #endif
@@ -703,12 +744,12 @@ int qsdk_nb_ping_ip(char *ip)
 #if (defined QSDK_USING_LOG)
 	LOG_D("AT+NPING=%s\n",ip);
 #endif
-	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+NPING=%s",ip)!=RT_EOK) return RT_ERROR;
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+NPING=%s",ip)!=RT_EOK) return RT_ERROR;
 #elif (defined QSDK_USING_M5311)
 #if (defined QSDK_USING_LOG)
 	LOG_D("AT+PING=%s,,,1,,1\n",ip);
 #endif
-	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+PING=%s,,,1,,1",ip)!=RT_EOK) return RT_ERROR;
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+PING=%s,,,1,,1",ip)!=RT_EOK) return RT_ERROR;
 #endif	
 	
 	rt_event_recv(nb_event,EVENT_PING_ERROR|EVENT_PING_OK,RT_EVENT_FLAG_OR|RT_EVENT_FLAG_CLEAR,60000,&status);
@@ -720,59 +761,6 @@ int qsdk_nb_ping_ip(char *ip)
 }
 
 #if (defined QSDK_USING_M5311)||(defined QSDK_USING_ME3616)
-/*************************************************************
-*	函数名称：	qsdk_nb_open_net_light
-*
-*	函数功能：	打开网络指示灯
-*
-*	入口参数：	无
-*
-*	返回参数：	0:成功    1:失败
-*
-*	说明：		
-*************************************************************/
-int qsdk_nb_open_net_light(void)
-{
-#ifdef QSDK_USING_M5311
-#if (defined QSDK_USING_LOG)
-	LOG_D("AT+CMSYSCTRL=0,2\n");
-#endif
-	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+CMSYSCTRL=0,2")!=RT_EOK)	return RT_ERROR;
-#else
-#if (defined QSDK_USING_LOG)
-	LOG_D("AT+ZCONTLED=1\n");
-#endif
-	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+ZCONTLED=1")!=RT_EOK)	return RT_ERROR;
-#endif	
-	return  RT_EOK;
-}
-/*************************************************************
-*	函数名称：	qsdk_nb_close_net_light
-*
-*	函数功能：	关闭网络指示灯
-*
-*	入口参数：	无
-*
-*	返回参数：	0:成功    1:失败
-*
-*	说明：		
-*************************************************************/
-int qsdk_nb_close_net_light(void)
-{
-#ifdef QSDK_USING_M5311
-#if (defined QSDK_USING_LOG)
-	LOG_D("AT+CMSYSCTRL=0,0\n");
-#endif
-	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+CMSYSCTRL=0,0")!=RT_EOK)	return RT_ERROR;
-#else
-#if (defined QSDK_USING_LOG)
-	LOG_D("AT+ZCONTLED=0\n");
-#endif
-	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+ZCONTLED=0")!=RT_EOK)	return RT_ERROR;
-#endif	
-	return  RT_EOK;
-}
-#ifdef QSDK_USING_M5311
 /*************************************************************
 *	函数名称：	qsdk_nb_set_rai_mode
 *
@@ -793,10 +781,70 @@ int qsdk_nb_set_rai_mode(int rai)
 #if (defined QSDK_USING_LOG)
 	LOG_D("AT*NBIOTRAI=%d\n",rai);
 #endif
-	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT*NBIOTRAI=%d",rai)!=RT_EOK)	return RT_ERROR;
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT*NBIOTRAI=%d",rai)!=RT_EOK)	return RT_ERROR;
+#else
+#if (defined QSDK_USING_LOG)
+	LOG_D("AT*MNBIOTRAI=%d\n",rai);
+#endif
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT*MNBIOTRAI=%d",rai)!=RT_EOK)	return RT_ERROR;
 #endif	
 	return  RT_EOK;
 }
+/*************************************************************
+*	函数名称：	qsdk_nb_open_net_light
+*
+*	函数功能：	打开网络指示灯
+*
+*	入口参数：	无
+*
+*	返回参数：	0:成功    1:失败
+*
+*	说明：		
+*************************************************************/
+int qsdk_nb_open_net_light(void)
+{
+#ifdef QSDK_USING_M5311
+#if (defined QSDK_USING_LOG)
+	LOG_D("AT+CMSYSCTRL=0,2\n");
+#endif
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+CMSYSCTRL=0,2")!=RT_EOK)	return RT_ERROR;
+#else
+#if (defined QSDK_USING_LOG)
+	LOG_D("AT+ZCONTLED=1\n");
+#endif
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+ZCONTLED=1")!=RT_EOK)	return RT_ERROR;
+#endif	
+	return  RT_EOK;
+}
+/*************************************************************
+*	函数名称：	qsdk_nb_close_net_light
+*
+*	函数功能：	关闭网络指示灯
+*
+*	入口参数：	无
+*
+*	返回参数：	0:成功    1:失败
+*
+*	说明：		
+*************************************************************/
+int qsdk_nb_close_net_light(void)
+{
+#ifdef QSDK_USING_M5311
+#if (defined QSDK_USING_LOG)
+	LOG_D("AT+CMSYSCTRL=0,0\n");
+#endif
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+CMSYSCTRL=0,0")!=RT_EOK)	return RT_ERROR;
+#else
+#if (defined QSDK_USING_LOG)
+	LOG_D("AT+ZCONTLED=0\n");
+#endif
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+ZCONTLED=0")!=RT_EOK)	return RT_ERROR;
+#endif	
+	return  RT_EOK;
+}
+
+#ifdef QSDK_USING_M5311
+
 /*************************************************************
 *	函数名称：	qsdk_nb_open_auto_psm
 *
@@ -814,7 +862,7 @@ int qsdk_nb_open_auto_psm(void)
 #if (defined QSDK_USING_LOG)
 	LOG_D("AT+SM=UNLOCK\n");
 #endif
-	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+SM=UNLOCK")!=RT_EOK)	return RT_ERROR;
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+SM=UNLOCK")!=RT_EOK)	return RT_ERROR;
 #endif	
 	return  RT_EOK;
 }
@@ -835,7 +883,7 @@ int qsdk_nb_close_auto_psm(void)
 #if (defined QSDK_USING_LOG)
 	LOG_D("AT+SM=LOCK\n");
 #endif
-	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+SM=LOCK")!=RT_EOK)	return RT_ERROR;
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+SM=LOCK")!=RT_EOK)	return RT_ERROR;
 #endif
 	return  RT_EOK;
 }
@@ -909,7 +957,7 @@ int qsdk_iot_set_address(void)
 {
 	LOG_D("AT+CFUN=0\n");
 
-	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+CFUN=0")!=RT_EOK)
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+CFUN=0")!=RT_EOK)
 	{
 		LOG_E("set AT+CFUN=0 error\n");
 		return RT_ERROR;
@@ -918,10 +966,10 @@ int qsdk_iot_set_address(void)
 	
 #if (defined QSDK_USING_M5310A) &&(defined QSDK_USING_IOT)
 	LOG_D("AT+NCDP=%s,%s\n",QSDK_IOT_ADDRESS,QSDK_IOT_PORT);
-	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+NCDP=%s,%s",QSDK_IOT_ADDRESS,QSDK_IOT_PORT)!=RT_EOK)
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+NCDP=%s,%s",QSDK_IOT_ADDRESS,QSDK_IOT_PORT)!=RT_EOK)
 #else
 	LOG_D("AT+NCDP=0.0.0.0,5683\n");
-	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+NCDP=0.0.0.0,5683")!=RT_EOK)
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+NCDP=0.0.0.0,5683")!=RT_EOK)
 #endif
 	{
 		LOG_E("set ncdp address error\n");
@@ -1004,13 +1052,14 @@ void hexstring_to_string(char * pHex,int len, char * pString)
 *************************************************************/
 void nb_reboot_func(char *data)
 {
-	//判断是否在未退出PSM前复位
 	if(qsdk_nb_get_psm_status()==RT_EOK)
 	{
 		rt_event_send(nb_event,EVENT_EXIT_PSM_REBOOT);
 	}
 /************************M5310A复位处理*****************************/
 #if	(defined QSDK_USING_M5310)||(defined QSDK_USING_M5310A)
+	//判断是否在未退出PSM前复位
+
 	if(rt_strstr(data,"REBOOT_CAUSE_SECURITY_RESET_PIN")!=RT_NULL)
 	{
 		if(nb_device_table.reboot_open==NB_MODULE_REBOOT_FOR_PIN)
@@ -1117,7 +1166,11 @@ void qsdk_psm_entry(void* parameter)
 		{
 			//设置QSDK内部进入PSM指示
 			nbiot_psm_status=qsdk_nb_status_enter_psm;
-			
+
+			//开启wakeup_out唤醒中断
+#if	(defined QSDK_USING_M5311)||(defined QSDK_USING_ME3616)
+			nb_wakeup_enable_irq();
+#endif
 			//锁住AT，停止程序发送AT命令
 			rt_mutex_take(nb_client->lock,RT_WAITING_FOREVER);
 		}
@@ -1241,20 +1294,15 @@ void qsdk_thread_entry(void* parameter)
 #endif
 				rt_event_send(nb_event,EVENT_ENTER_PSM);
 			}
-/*********************退出PSM处理函数**************************/
-#if (defined QSDK_USING_M5311)||(defined QSDK_USING_ME3616)
-			
-#if	(defined QSDK_USING_M5311)
-			else if(rt_strstr(event,"*MATWAKEUP")!=RT_NULL)	
-#elif (defined QSDK_USING_ME3616)
-			else if(rt_strstr(event,"*MNBIOTEVENT: \"EXIT PSM\"")!=RT_NULL)	
-#endif
+/*********************ME3616 GPS处理函数**************************/
+#if (defined QSDK_USING_ME3616_GPS)
+			else if(rt_strstr(event,"+ZGPS:")!=RT_NULL)	
 			{
-#ifdef QSDK_USING_LOG
-			LOG_D("%s\r\n",event);
-#endif
-				
-				rt_event_send(nb_event,EVENT_EXIT_PSM);
+				qsdk_gps_event_func(event);
+			}
+			else if(rt_strstr(event,"$GNRMC")!=RT_NULL)	
+			{
+				qsdk_gps_event_func(event);
 			}
 #endif
 /*****************************************************************/
@@ -1354,7 +1402,6 @@ static struct at_urc nb_urc_table[]={
 	{"*ATREADY:",           "\r",nb_event_func},
 	//PSM指示
 	{"*GOTOSLEEP",           "\r",nb_event_func},
-	{"*MATWAKEUP",           "\r",nb_event_func},
 //如果启用TCP/UDP支持，增加NET函数调用
 #ifdef QSDK_USING_NET
 	{"+IPRD:",              "\r\n",nb_event_func},
@@ -1365,10 +1412,14 @@ static struct at_urc nb_urc_table[]={
 	{"*MATREADY:",           "\r",nb_event_func},
 	//PSM指示
 	{"*MNBIOTEVENT: \"ENTER PSM\"",           "\r",nb_event_func},
-	{"*MNBIOTEVENT: \"EXIT PSM\"",            "\r",nb_event_func},
 #ifdef QSDK_USING_IOT
 	{"+M2MCLI",				  	 "\r\n",nb_event_func},	
 	{"+M2MCLIRECV",				 "\r\n",nb_event_func},		
+#endif
+
+#ifdef QSDK_USING_ME3616_GPS
+	{"+ZGPS:",				  	 "\r\n",nb_event_func},	
+  {"$GNRMC",				  	 "\r\n",nb_event_func},	
 #endif
 #endif	
 	
@@ -1429,7 +1480,7 @@ int qsdk_init_environment(void)
 	}
 #if	(defined QSDK_USING_M5311)||(defined QSDK_USING_ME3616)
 
-	if(QSDK_WAUP_IN_PIN_VALUE==PIN_HIGH)
+	if(QSDK_WAKEUP_IN_PIN_VALUE==PIN_HIGH)
 	{
 		nb_pin.wake_in_high=PIN_HIGH;
 		nb_pin.wake_in_low=PIN_LOW;
@@ -1476,7 +1527,7 @@ int qsdk_init_environment(void)
 	qsdk_thread_id=rt_thread_create("qsdk_th",
 																	qsdk_thread_entry,
 																	RT_NULL,
-																	QSDK_HAND_THREAD_STACK_SIZE,
+																	1024 + 512,
 																	7,
 																	50);
 	if(qsdk_thread_id!=RT_NULL)
@@ -1490,7 +1541,7 @@ int qsdk_init_environment(void)
 	qsdk_psm_id=rt_thread_create("qsdk_psm",
 																	qsdk_psm_entry,
 																	RT_NULL,
-																	QSDK_HAND_THREAD_STACK_SIZE,
+																	512,
 																	12,
 																	50);
 	if(qsdk_psm_id!=RT_NULL)
@@ -1505,6 +1556,12 @@ int qsdk_init_environment(void)
 	nb_device_table.reboot_type=NB_MODULE_NO_INIT;
 	nb_device_table.net_connect_ok=NB_MODULE_NO_INIT;
 	nbiot_psm_status=qsdk_nb_status_exit_psm;
+
+	//初始化wakeuo_out引脚
+#if	(defined QSDK_USING_M5311)||(defined QSDK_USING_ME3616)
+	nb_wakeup_init();
+#endif
+
 	//nb-iot gpio init
 	if(nb_io_init()!=RT_EOK)
 	{
@@ -1560,20 +1617,26 @@ int qsdk_nb_quick_connect(void)
 #if (defined QSDK_USING_DEBUG)
 	LOG_D("ATE0\n");
 #endif
-	if(at_obj_exec_cmd(nb_client,RT_NULL,"ATE0")!=RT_EOK)	return RT_ERROR;
+	if(at_obj_exec_cmd(nb_client,nb_resp,"ATE0")!=RT_EOK)	return RT_ERROR;
 
 	//开启进入PSM提示
 #if (defined QSDK_USING_DEBUG)
 	LOG_D("AT*SLEEP=1\n");
 #endif
-	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT*SLEEP=1")!=RT_EOK)	return RT_ERROR;
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT*SLEEP=1")!=RT_EOK)	return RT_ERROR;
 	
 		//开启退出PSM提示
 #if (defined QSDK_USING_DEBUG)
 	LOG_D("AT*MATWAKEUP=1\n");
 #endif
-	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT*MATWAKEUP=1")!=RT_EOK)	return RT_ERROR;
-	
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT*MATWAKEUP=1")!=RT_EOK)	return RT_ERROR;
+
+		//开启wakeup_out 提示
+#if (defined QSDK_USING_DEBUG)
+	LOG_D("AT+CMSYSCTRL=1,1\n");
+#endif
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+CMSYSCTRL=1,1")!=RT_EOK)	return RT_ERROR;	
+
 	if(qsdk_nb_get_psm_status()!=RT_EOK)
 	{
 		qsdk_nb_close_auto_psm();
@@ -1589,21 +1652,26 @@ int qsdk_nb_quick_connect(void)
 #if (defined QSDK_USING_DEBUG)
 	LOG_D("ATE0\n");
 #endif
-	if(at_obj_exec_cmd(nb_client,RT_NULL,"ATE0")!=RT_EOK)	return RT_ERROR;
+	if(at_obj_exec_cmd(nb_client,nb_resp,"ATE0")!=RT_EOK)	return RT_ERROR;
 	
 		//开启进入PSM提示
 #if (defined QSDK_USING_DEBUG)
 	LOG_D("AT*MNBIOTEVENT=1,1\n");
 #endif
-	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT*MNBIOTEVENT=1,1")!=RT_EOK)	return RT_ERROR;
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT*MNBIOTEVENT=1,1")!=RT_EOK)	return RT_ERROR;
 	
 		qsdk_nb_open_net_light();
+
+	if(qsdk_nb_get_psm_status()!=RT_EOK)
+	{
+		qsdk_nb_set_psm_mode(0,RT_NULL,RT_NULL);
+	}
 #if (defined QSDK_USING_IOT)	
 	//设置数据发送模式
 #if (defined QSDK_USING_DEBUG)
 	LOG_D("AT+M2MCLICFG=1,0\n");
 #endif
-	if(at_obj_exec_cmd(nb_client,RT_NULL,"AT+M2MCLICFG=1,0")!=RT_EOK) return RT_ERROR;
+	if(at_obj_exec_cmd(nb_client,nb_resp,"AT+M2MCLICFG=1,0")!=RT_EOK) return RT_ERROR;
 #endif
 #endif
 

@@ -191,7 +191,23 @@ int qsdk_mqtt_data_callback(char *topic,char *mesg,int mesg_len)
 	return RT_EOK;
 }
 
+/****************************************************
+* 函数名称： qsdk_gps_data_callback
+*
+* 函数作用： GPS定位成功回调函数
+*
+* 入口参数：  lon：经度    lat:纬度    speed：速度
+*
+* 返回值： 	0 处理成功	1 处理失败
+*****************************************************/
 
+
+int qsdk_gps_data_callback(char *lon,char *lat,float speed)
+{
+	LOG_I("enter gps callback  lon:%s,lat:%s,speed:%f\r\n",lon,lat,speed);
+
+	return RT_EOK;
+}
 /****************************************************
 * 函数名称： qsdk_nb_reboot_callback
 *

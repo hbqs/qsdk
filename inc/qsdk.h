@@ -11,6 +11,7 @@
  * 2019-06-13     longmain     del qsdk_onenet_init_environment
  * 2019-06-30     longmain     add qsdk_nb_clear_environment
  * 2019-08-30     longmain     Adding PSM support function
+ * 2019-09-19     longmain     Adding gps support function
  */
 
 #ifndef __QSDK_H__
@@ -66,11 +67,12 @@ int qsdk_nb_exit_edrx_mode(void);
 int qsdk_nb_ping_ip(char *ip);
 
 #if (defined  QSDK_USING_M5311)||(defined  QSDK_USING_ME3616)
+int qsdk_nb_set_rai_mode(int rai);
 int qsdk_nb_open_net_light(void);
 int qsdk_nb_close_net_light(void);
 
 #if (defined  QSDK_USING_M5311)
-int qsdk_nb_set_rai_mode(int rai);
+
 int qsdk_nb_open_auto_psm(void);
 int qsdk_nb_close_auto_psm(void);
 #endif
@@ -260,6 +262,30 @@ int qsdk_mqtt_get_error_type(void);
 #endif
 
 
+#ifdef QSDK_USING_GPS
+
+#ifdef QSDK_USING_ME3616_GPS
+int qsdk_gps_start_mode(rt_uint8_t mode);
+int qsdk_agps_config(void);
+int qsdk_gps_config(void);
+int qsdk_gps_set_out_time(rt_uint32_t time);
+int qsdk_gps_run_mode(rt_uint8_t mode);
+int qsdk_gps_close(void);
+
+#elif (defined QSDK_USING_AIR530_GPS)
+
+int gps_start_mode(int type);
+int gps_erase_flash(void);
+int gps_enter_standby(int type);
+int gps_set_nmea_out_time(int time);
+int gps_enter_low_power(int mode,int run_time,int sleep_time);
+int gps_search_mode(int gps_status,int glonass_status,int beidou_status,int galieo_status);
+int gps_set_nmea_dis(int status);
+
+#endif //endif QSDK_USING_AIR530_GPS
+
+#endif //endif QSDK_USING_GPS
+
 void qsdk_rtc_set_time_callback(int year,char month,char day,char hour,char min,char sec,char week);
 
 int qsdk_net_data_callback(char *data,int len);
@@ -273,6 +299,7 @@ int qsdk_onenet_exec_rsp_callback(int len,char* cmd);
 void qsdk_onenet_fota_callback(void);
 
 int qsdk_mqtt_data_callback(char *topic,char *mesg,int mesg_len);
+int qsdk_gps_data_callback(char *lon,char *lat,float speed);
 void qsdk_nb_reboot_callback(void);
 
 #endif	//qsdk.h end
