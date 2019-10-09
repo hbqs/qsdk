@@ -20,6 +20,9 @@ if GetDepend(['QSDK_USING_IOT']):
 if GetDepend(['QSDK_USING_MQTT']):
     src += Glob('src/qsdk_mqtt.c')
 
+if GetDepend(['QSDK_USING_GPS']):
+    src += Glob('src/qsdk_gps.c')
+    
 group = DefineGroup('qsdk', src, depend = ['PKG_USING_QSDK'], CPPPATH = path)
 
 Return('group')
