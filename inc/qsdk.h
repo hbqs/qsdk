@@ -274,14 +274,14 @@ int qsdk_gps_close(void);
 
 #elif (defined QSDK_USING_AIR530_GPS)
 
-int gps_start_mode(int type);
-int gps_erase_flash(void);
-int gps_enter_standby(int type);
-int gps_set_nmea_out_time(int time);
-int gps_enter_low_power(int mode,int run_time,int sleep_time);
-int gps_search_mode(int gps_status,int glonass_status,int beidou_status,int galieo_status);
-int gps_set_nmea_dis(int status);
-
+int qsdk_gps_start_mode(int type);
+int qsdk_gps_erase_flash(void);
+int qsdk_gps_enter_standby(int type);
+int qsdk_gps_set_nmea_out_time(int sec);
+int qsdk_gps_enter_low_power(int mode,int run_time,int sleep_time);
+int qsdk_gps_search_mode(int gps_status,int glonass_status,int beidou_status,int galieo_status);
+int qsdk_gps_set_nmea_dis(int status);
+int qsdk_gps_set_locat_info(char *lon,char *lat,int year,char month,char day,char hour,char min,char sec);
 #endif //endif QSDK_USING_AIR530_GPS
 
 #endif //endif QSDK_USING_GPS

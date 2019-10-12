@@ -152,34 +152,35 @@ int gnrmc_parse(unsigned char *pstr, struct gnrmc_info *pgnrmc_info)
     }
     pgnrmc_info->position_valid = ((buf[0] == 'A') ? 1 : 0);
 
-    // 经度
-    len = comma_split(pstr, buf, sizeof(buf), 3, 4);
-    if (len < 0)
-    {
-        return -1;
-    }
-    strcpy(pgnrmc_info->longitude,buf);
-    // 经度半球E(东经)或W(西经)
-    len = comma_split(pstr, buf, sizeof(buf), 4, 5);
-    if (len != 1)
-    {
-        return -1;
-    }
-    pgnrmc_info->longitude_suffix = buf[0];
     // 纬度
-    len = comma_split(pstr, buf, sizeof(buf), 5, 6);
+    len = comma_split(pstr, buf, sizeof(buf), 3, 4);
     if (len < 0)
     {
         return -1;
     }
     strcpy(pgnrmc_info->latitude,buf);
     // 纬度半球N(北半球)或S(南半球)
-    len = comma_split(pstr, buf, sizeof(buf), 6, 7);
+    len = comma_split(pstr, buf, sizeof(buf), 4, 5);
     if (len != 1)
     {
         return -1;
     }
     pgnrmc_info->latitude_suffix = buf[0];
+    // 经度
+    len = comma_split(pstr, buf, sizeof(buf), 5, 6);
+    if (len < 0)
+    {
+        return -1;
+    }
+    strcpy(pgnrmc_info->longitude,buf);
+    // 经度半球E(东经)或W(西经)
+    len = comma_split(pstr, buf, sizeof(buf), 6, 7);
+    if (len != 1)
+    {
+        return -1;
+    }
+    pgnrmc_info->longitude_suffix = buf[0];
+
 		
 		// 速度
     len = comma_split(pstr, buf, sizeof(buf), 7, 8);
@@ -412,7 +413,7 @@ int gps_checksum(char* Bytes,int len)
 	return result;
 }
 /*************************************************************
-*	函数名称：	gps_start_mode
+*	函数名称：	qsdk_gps_start_mode
 *
 *	函数功能：	gps 重启
 *
@@ -422,7 +423,7 @@ int gps_checksum(char* Bytes,int len)
 *
 *	说明：		
 *************************************************************/
-int gps_start_mode(int type)
+int qsdk_gps_start_mode(int type)
 {
 	memset(gps_buffer,0,strlen(gps_buffer));
 	memset(cmd_buffer,0,strlen(cmd_buffer));
@@ -439,7 +440,7 @@ int gps_start_mode(int type)
 }
 
 /*************************************************************
-*	函数名称：	gps_erase_flash
+*	函数名称：	qsdk_gps_erase_flash
 *
 *	函数功能：	擦除 flash 中的辅助定位数据
 *
@@ -449,7 +450,7 @@ int gps_start_mode(int type)
 *
 *	说明：		
 *************************************************************/
-int gps_erase_flash(void)
+int qsdk_gps_erase_flash(void)
 {
 	memset(gps_buffer,0,strlen(gps_buffer));
 	rt_sprintf(gps_buffer,"$PGKC040*2B\r\n");
@@ -463,7 +464,7 @@ int gps_erase_flash(void)
 }
 
 /*************************************************************
-*	函数名称：	gps_enter_standby
+*	函数名称：	qsdk_gps_enter_standby
 *
 *	函数功能：	进入 standby 低功耗模式
 *
@@ -473,7 +474,7 @@ int gps_erase_flash(void)
 *
 *	说明：		
 *************************************************************/
-int gps_enter_standby(int type)
+int qsdk_gps_enter_standby(int type)
 {
 	memset(gps_buffer,0,strlen(gps_buffer));
 	memset(cmd_buffer,0,strlen(cmd_buffer));
@@ -490,7 +491,7 @@ int gps_enter_standby(int type)
 }
 
 /*************************************************************
-*	函数名称：	gps_set_nmea_out_time
+*	函数名称：	qsdk_gps_set_nmea_out_time
 *
 *	函数功能：	配置输出 NMEA 消息的间隔（ms 单位）
 *
@@ -500,13 +501,13 @@ int gps_enter_standby(int type)
 *
 *	说明：		
 *************************************************************/
-int gps_set_nmea_out_time(int time)
+int qsdk_gps_set_nmea_out_time(int sec)
 {
-	if(time<200)
-		time=200;
+	if(sec<200)
+		sec=200;
 	memset(gps_buffer,0,strlen(gps_buffer));
 	memset(cmd_buffer,0,strlen(cmd_buffer));
-	rt_sprintf(gps_buffer,"PGKC101,%d",time);
+	rt_sprintf(gps_buffer,"PGKC101,%d",sec);
 
 	rt_sprintf(cmd_buffer,"$%s*%02x\r\n",gps_buffer,gps_checksum(gps_buffer,rt_strlen(gps_buffer)));
 	LOG_D("%s\n",cmd_buffer);
@@ -518,7 +519,7 @@ int gps_set_nmea_out_time(int time)
 	return RT_EOK;
 }
 /*************************************************************
-*	函数名称：	gps_enter_low_power
+*	函数名称：	qsdk_gps_enter_low_power
 *
 *	函数功能：	进入周期性低功耗模式
 *
@@ -528,7 +529,7 @@ int gps_set_nmea_out_time(int time)
 *
 *	说明：		
 *************************************************************/
-int gps_enter_low_power(int mode,int run_time,int sleep_time)
+int qsdk_gps_enter_low_power(int mode,int run_time,int sleep_time)
 {
 	memset(gps_buffer,0,strlen(gps_buffer));
 	memset(cmd_buffer,0,strlen(cmd_buffer));
@@ -548,7 +549,7 @@ int gps_enter_low_power(int mode,int run_time,int sleep_time)
 	return RT_EOK;
 }
 /*************************************************************
-*	函数名称：	gps_search_mode
+*	函数名称：	qsdk_gps_search_mode
 *
 *	函数功能：	搜星模式
 *
@@ -558,7 +559,7 @@ int gps_enter_low_power(int mode,int run_time,int sleep_time)
 *
 *	说明：		
 *************************************************************/
-int gps_search_mode(int gps_status,int glonass_status,int beidou_status,int galieo_status)
+int qsdk_gps_search_mode(int gps_status,int glonass_status,int beidou_status,int galieo_status)
 {
 	memset(gps_buffer,0,strlen(gps_buffer));
 	memset(cmd_buffer,0,strlen(cmd_buffer));
@@ -574,7 +575,7 @@ int gps_search_mode(int gps_status,int glonass_status,int beidou_status,int gali
 	return RT_EOK;
 }
 /*************************************************************
-*	函数名称：	gps_set_nmea_dis
+*	函数名称：	qsdk_gps_set_nmea_dis
 *
 *	函数功能：	配置输出 NMEA 语句输出使能
 *
@@ -584,7 +585,7 @@ int gps_search_mode(int gps_status,int glonass_status,int beidou_status,int gali
 *
 *	说明：		
 *************************************************************/
-int gps_set_nmea_dis(int status)
+int qsdk_gps_set_nmea_dis(int status)
 {
 	memset(gps_buffer,0,strlen(gps_buffer));
 	memset(cmd_buffer,0,strlen(cmd_buffer));
@@ -601,17 +602,17 @@ int gps_set_nmea_dis(int status)
 }
 
 /*************************************************************
-*	函数名称：	gps_set_nmea_dis
+*	函数名称：	qsdk_gps_set_locat_info
 *
-*	函数功能：	配置输出 NMEA 语句输出使能
+*	函数功能：	设置大概位置以便快速定位
 *
-*	入口参数：	time:  200-10000
+*	入口参数：	lon：经度 lat：纬度 year：年 month：月 day：日 hour：时 min：分 sec秒
 *
 *	返回参数：	0：成功   1：失败
 *
 *	说明：		
 *************************************************************/
-int gps_set_locat_info(char *lon,char *lat,int year,char month,char day,char hour,char min,char sec)
+int qsdk_gps_set_locat_info(char *lon,char *lat,int year,char month,char day,char hour,char min,char sec)
 {
 	memset(gps_buffer,0,strlen(gps_buffer));
 	memset(cmd_buffer,0,strlen(cmd_buffer));
@@ -688,7 +689,7 @@ int gps_init_environment(void)
 	at_client_init(QSDK_GPS_UART,1024);
 	gps_client=at_client_get(QSDK_GPS_UART);
 	at_obj_set_urc_table(gps_client,gps_urc_table,sizeof(gps_urc_table)/sizeof(gps_urc_table[0]));
-	gps_set_nmea_dis(1);
+	qsdk_gps_set_nmea_dis(1);
 	return RT_EOK;
 }
 
