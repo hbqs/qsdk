@@ -557,7 +557,7 @@ int qsdk_onenet_open(void)
 		LOG_E("onenet wait reg timeout\r\n");
 		return RT_ERROR;
 	}
-	if(status==event_bootstrap_fail|status==event_connect_fail|status==event_reg_fail) 
+	if(status==event_bootstrap_fail||status==event_connect_fail||status==event_reg_fail) 
 	{
 		LOG_E("onenet reg failure\r\n");
 		return RT_ERROR;
@@ -656,7 +656,7 @@ int qsdk_onenet_update_time(int flge)
 		goto __exit;
 	}
 	//判断是否更新成功
-	if(status==event_lifetime_timeout|status==event_update_fail|status==event_update_timeout)
+	if(status==event_lifetime_timeout||status==event_update_fail||status==event_update_timeout)
 	{
 		goto __exit;
 	}
